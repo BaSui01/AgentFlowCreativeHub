@@ -1,0 +1,330 @@
+# 工作流预设模板配置
+
+templates:
+  # ========================================
+  # 模板 1: 仅大纲 (outline-only)
+  # ========================================
+  outline-only:
+    name: "仅生成大纲"
+    description: "快速生成文章大纲并审核"
+    category: "outline-only"
+    definition:
+      name: "大纲工作流"
+      version: "1.0"
+      automation_config:
+        mode: "semi_auto"
+      steps:
+        - id: "generate_outline"
+          name: "生成大纲"
+          type: "agent"
+          agent_type: "planner"
+          role: "outline_generator"
+          auto_execute: true
+          approval_required: false
+          input:
+            topic: "{{user_input.topic}}"
+            requirements: "{{user_input.requirements}}"
+            target_audience: "{{user_input.target_audience}}"
+            word_count: "{{user_input.word_count}}"
+          output: "outline"
+          quality_check:
+            enabled: true
+            min_score: 75
+            retry_on_fail: true
+            
+        - id: "review_outline"
+          name: "审核大纲"
+          type: "agent"
+          agent_type: "reviewer"
+          role: "outline_reviewer"
+          auto_execute: true
+          approval_required: true  # 需要人工审批
+          depends_on: ["generate_outline"]
+          input:
+            outline: "{{outline}}"
+            requirements: "{{user_input.requirements}}"
+          output: "reviewed_outline"
+          approval_config:
+            type: "conditional"
+            auto_approve_if:
+              expression: "quality_score >= 90"
+            timeout_seconds: 3600
+            notify_channels: ["webhook"]
+  
+  # ========================================
+  # 模板 2: 快速写作 (quick-write)
+  # ========================================
+  quick-write:
+    name: "快速写作"
+    description: "快速创作内容并审校"
+    category: "quick-write"
+    definition:
+      name: "快速写作工作流"
+      version: "1.0"
+      automation_config:
+        mode: "full_auto"
+        default_retry:
+          max_retries: 2
+          backoff: "exponential"
+          delay: 5
+      steps:
+        - id: "writing"
+          name: "撰写内容"
+          type: "agent"
+          agent_type: "writer"
+          role: "article_writer"
+          auto_execute: true
+          input:
+            topic: "{{user_input.topic}}"
+            style: "{{user_input.style}}"
+            word_count: "{{user_input.word_count}}"
+          output: "draft"
+          quality_check:
+            enabled: true
+            min_score: 80
+            retry_on_fail: true
+            rewrite_agent: "writer"
+            
+        - id: "review"
+          name: "内容审校"
+          type: "agent"
+          agent_type: "reviewer"
+          role: "content_reviewer"
+          auto_execute: true
+          depends_on: ["writing"]
+          input:
+            content: "{{draft}}"
+            check_grammar: true
+            check_facts: true
+          output: "final_content"
+          quality_check:
+            enabled: true
+            min_score: 85
+  
+  # ========================================
+  # 模板 3: 完整内容创作 (full-content)
+  # ========================================
+  full-content:
+    name: "完整内容创作"
+    description: "从调研到发布的完整流程"
+    category: "full-content"
+    definition:
+      name: "完整创作工作流"
+      version: "1.0"
+      automation_config:
+        mode: "semi_auto"
+        max_rounds: 3
+        agent_switching:
+          mode: "dynamic"
+          rules:
+            - condition: "quality_score < 80"
+              next_agent: "rewriter"
+              priority: 1
+      steps:
+        - id: "research"
+          name: "主题调研"
+          type: "agent"
+          agent_type: "researcher"
+          role: "topic_researcher"
+          auto_execute: true
+          input:
+            topic: "{{user_input.topic}}"
+            depth: "comprehensive"
+          output: "research_data"
+          
+        - id: "outline"
+          name: "生成大纲"
+          type: "agent"
+          agent_type: "planner"
+          role: "outline_generator"
+          auto_execute: true
+          depends_on: ["research"]
+          input:
+            topic: "{{user_input.topic}}"
+            context: "{{research_data}}"
+            requirements: "{{user_input.requirements}}"
+          output: "outline"
+          quality_check:
+            enabled: true
+            min_score: 80
+            
+        - id: "writing"
+          name: "撰写内容"
+          type: "agent"
+          agent_type: "writer"
+          role: "article_writer"
+          auto_execute: true
+          depends_on: ["outline"]
+          input:
+            outline: "{{outline}}"
+            style: "professional"
+          output: "draft"
+          quality_check:
+            enabled: true
+            min_score: 85
+            retry_on_fail: true
+            
+        - id: "review"
+          name: "内容审校"
+          type: "agent"
+          agent_type: "reviewer"
+          role: "content_reviewer"
+          auto_execute: true
+          depends_on: ["writing"]
+          input:
+            content: "{{draft}}"
+            check_grammar: true
+            check_facts: true
+          output: "reviewed_content"
+          
+        - id: "format"
+          name: "格式化"
+          type: "agent"
+          agent_type: "formatter"
+          role: "markdown_formatter"
+          auto_execute: true
+          depends_on: ["review"]
+          input:
+            content: "{{reviewed_content}}"
+          output: "final_output"
+  
+  # ========================================
+  # 模板 4: 多语言内容 (multilang)
+  # ========================================
+  multilang:
+    name: "多语言内容生产"
+    description: "创作内容并翻译成多种语言"
+    category: "multilang"
+    definition:
+      name: "多语言工作流"
+      version: "1.0"
+      automation_config:
+        mode: "full_auto"
+      steps:
+        - id: "writing"
+          name: "撰写原文"
+          type: "agent"
+          agent_type: "writer"
+          role: "article_writer"
+          auto_execute: true
+          input:
+            topic: "{{user_input.topic}}"
+          output: "source_content"
+          
+        - id: "translate_en"
+          name: "翻译英文"
+          type: "agent"
+          agent_type: "translator"
+          role: "professional_translator"
+          auto_execute: true
+          parallel: true
+          depends_on: ["writing"]
+          input:
+            content: "{{source_content}}"
+            source_lang: "zh"
+            target_lang: "en"
+          output: "content_en"
+          quality_check:
+            enabled: true
+            min_score: 85
+            retry_on_fail: true
+            
+        - id: "translate_ja"
+          name: "翻译日文"
+          type: "agent"
+          agent_type: "translator"
+          role: "professional_translator"
+          auto_execute: true
+          parallel: true
+          depends_on: ["writing"]
+          input:
+            content: "{{source_content}}"
+            source_lang: "zh"
+            target_lang: "ja"
+          output: "content_ja"
+          quality_check:
+            enabled: true
+            min_score: 85
+            retry_on_fail: true
+  
+  # ========================================
+  # 模板 5: 仅审校 (review-only)
+  # ========================================
+  review-only:
+    name: "仅内容审校"
+    description: "对已有内容进行审校和优化"
+    category: "review-only"
+    definition:
+      name: "审校工作流"
+      version: "1.0"
+      automation_config:
+        mode: "full_auto"
+      steps:
+        - id: "grammar_check"
+          name: "语法检查"
+          type: "agent"
+          agent_type: "reviewer"
+          role: "grammar_reviewer"
+          auto_execute: true
+          input:
+            content: "{{user_input.content}}"
+          output: "grammar_checked"
+          
+        - id: "content_review"
+          name: "内容审核"
+          type: "agent"
+          agent_type: "reviewer"
+          role: "content_reviewer"
+          auto_execute: true
+          depends_on: ["grammar_check"]
+          input:
+            content: "{{grammar_checked}}"
+            check_facts: true
+          output: "reviewed_content"
+          
+        - id: "format"
+          name: "格式化"
+          type: "agent"
+          agent_type: "formatter"
+          role: "markdown_formatter"
+          auto_execute: true
+          depends_on: ["content_review"]
+          input:
+            content: "{{reviewed_content}}"
+          output: "final_output"
+  
+  # ========================================
+  # 模板 6: 创意写作 (creative-writing)
+  # ========================================
+  creative-writing:
+    name: "创意写作"
+    description: "创意性内容创作流程"
+    category: "creative-writing"
+    definition:
+      name: "创意写作工作流"
+      version: "1.0"
+      automation_config:
+        mode: "semi_auto"
+      steps:
+        - id: "creative_writing"
+          name: "创意创作"
+          type: "agent"
+          agent_type: "writer"
+          role: "creative_writer"
+          auto_execute: true
+          input:
+            theme: "{{user_input.theme}}"
+            genre: "{{user_input.genre}}"
+          output: "creative_content"
+          approval_required: true  # 创意内容需要人工确认
+          
+        - id: "polish"
+          name: "内容润色"
+          type: "agent"
+          agent_type: "reviewer"
+          role: "content_reviewer"
+          auto_execute: true
+          depends_on: ["creative_writing"]
+          input:
+            content: "{{creative_content}}"
+          output: "polished_content"
