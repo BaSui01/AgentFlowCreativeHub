@@ -1,0 +1,5 @@
+# Local environment file (never commit secrets)
+.env
+.factory/
+# docs/ - 允许提交项目文档
+node_modules/
