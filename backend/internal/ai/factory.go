@@ -123,7 +123,7 @@ func (f *ClientFactory) GetClient(ctx context.Context, tenantID, modelID string)
 
 	// 如果启用了日志记录，包装客户端
 	if f.logger != nil {
-		client = NewLoggingClient(client, f.logger, tenantID, modelID, &model)
+		client = NewLoggingClient(client, f.logger, tenantID, modelID, &model, f.diskCache)
 	}
 
 	// 缓存客户端

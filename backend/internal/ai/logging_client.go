@@ -2,18 +2,22 @@ package ai
 
 import (
 	"context"
+	"encoding/json"
+	"fmt"
 	"time"
 
+	"backend/internal/cache"
 	modelspkg "backend/internal/models"
 )
 
 // LoggingClient 带日志记录的客户端包装器
 type LoggingClient struct {
-	client   ModelClient
-	logger   ModelCallLogger
-	tenantID string
-	modelID  string
-	model    *modelspkg.Model
+	client    ModelClient
+	logger    ModelCallLogger
+	tenantID  string
+	modelID   string
+	model     *modelspkg.Model
+	diskCache *cache.DiskCache // L3硬盘缓存
 }
 
 // NewLoggingClient 创建带日志记录的客户端
@@ -22,22 +26,64 @@ func NewLoggingClient(
 	logger ModelCallLogger,
 	tenantID, modelID string,
 	model *modelspkg.Model,
+	diskCache *cache.DiskCache,
 ) *LoggingClient {
 	return &LoggingClient{
-		client:   client,
-		logger:   logger,
-		tenantID: tenantID,
-		modelID:  modelID,
-		model:    model,
+		client:    client,
+		logger:    logger,
+		tenantID:  tenantID,
+		modelID:   modelID,
+		model:     model,
+		diskCache: diskCache,
 	}
 }
 
-// ChatCompletion 对话补全（带日志记录）
+// ChatCompletion 对话补全（带日志记录+硬盘缓存）
 func (c *LoggingClient) ChatCompletion(ctx context.Context, req *ChatCompletionRequest) (*ChatCompletionResponse, error) {
 	start := time.Now()
 
-	// 调用底层客户端
+	// L3: 硬盘缓存查询（仅当温度≤0.3时才使用缓存）
+	if c.diskCache != nil && req.Temperature <= 0.3 {
+		cacheKey := c.generateCacheKey(req)
+		
+		// 尝试从硬盘缓存获取
+		if entry, err := c.diskCache.Get(ctx, cacheKey); err == nil && entry != nil {
+			// 缓存命中！从缓存条目反序列化响应
+			var cachedResp ChatCompletionResponse
+			if err := json.Unmarshal([]byte(entry.Response), &cachedResp); err == nil {
+				// 记录缓存命中日志
+				latency := time.Since(start).Milliseconds()
+				c.logCall(ctx, &cachedResp, latency, nil)
+				return &cachedResp, nil
+			}
+		}
+	}
+
+	// 缓存未命中或不可用，调用底层客户端
 	resp, err := c.client.ChatCompletion(ctx, req)
+
+	// 写入硬盘缓存（仅当成功且温度≤0.3）
+	if err == nil && resp != nil && c.diskCache != nil && req.Temperature <= 0.3 {
+		cacheKey := c.generateCacheKey(req)
+		
+		// 序列化响应到JSON
+		if respJSON, err := json.Marshal(resp); err == nil {
+			// 构建缓存条目
+			entry := &cache.CacheEntry{
+				CacheKey:   cacheKey,
+				Model:      c.modelID,
+				PromptHash: cacheKey, // 使用相同的键作为hash
+				Response:   string(respJSON),
+				TokensUsed: resp.Usage.TotalTokens,
+				CostUSD:    c.calculateCost(resp.Usage.PromptTokens, resp.Usage.CompletionTokens),
+			}
+			
+			// 异步写入缓存，不阻塞主流程
+			go func() {
+				_ = c.diskCache.Set(context.Background(), entry)
+			}()
+		}
+	}
 
 	// 记录日志
 	latency := time.Since(start).Milliseconds()
@@ -281,4 +327,22 @@ func getContextStringPtr(ctx context.Context, key string) *string {
 		}
 	}
 	return nil
+}
+
+// generateCacheKey 生成缓存键
+// 根据模型ID、消息内容、温度等参数生成唯一键
+func (c *LoggingClient) generateCacheKey(req *ChatCompletionRequest) string {
+	// 将所有消息内容序列化为JSON字符串
+	messagesJSON, _ := json.Marshal(req.Messages)
+	
+	// 将所有影响输出的参数编码到prompt中
+	promptWithParams := fmt.Sprintf("messages=%s;temp=%.2f;max_tokens=%d;top_p=%.2f",
+		string(messagesJSON),
+		req.Temperature,
+		req.MaxTokens,
+		req.TopP,
+	)
+	
+	// 使用DiskCache的GenerateCacheKey生成键
+	return cache.GenerateCacheKey(c.modelID, promptWithParams)
 }
