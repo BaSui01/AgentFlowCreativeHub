@@ -7,6 +7,7 @@ import (
 	"log"
 	"time"
 
+	"backend/internal/command"
 	"backend/internal/config"
 
 	"github.com/hibiken/asynq"
@@ -17,10 +18,11 @@ type AsyncWorker struct {
 	server   *asynq.Server
 	registry *Registry
 	logSvc   AgentLogService
+	command  *command.Service
 }
 
 // NewAsyncWorker 创建 Worker
-func NewAsyncWorker(redisCfg config.RedisConfig, registry *Registry, logSvc AgentLogService) *AsyncWorker {
+func NewAsyncWorker(redisCfg config.RedisConfig, registry *Registry, logSvc AgentLogService, commandSvc *command.Service) *AsyncWorker {
 	srv := asynq.NewServer(
 		asynq.RedisClientOpt{
 			Addr:     formatRedisAddr(redisCfg),
@@ -39,6 +41,7 @@ func NewAsyncWorker(redisCfg config.RedisConfig, registry *Registry, logSvc Agen
 		server:   srv,
 		registry: registry,
 		logSvc:   logSvc,
+		command:  commandSvc,
 	}
 }
 
@@ -70,6 +73,9 @@ func (w *AsyncWorker) HandleAgentRunTask(ctx context.Context, t *asynq.Task) err
 	}
 
 	log.Printf("Processing agent run task: AgentID=%s, UserID=%s", p.AgentID, p.UserID)
+	if w.command != nil && p.CommandID != "" {
+		w.command.MarkRunning(ctx, p.CommandID)
+	}
 
 	// 1. 创建初始运行日志
 	runLog := &AgentRunLog{
@@ -105,6 +111,9 @@ func (w *AsyncWorker) HandleAgentRunTask(ctx context.Context, t *asynq.Task) err
 		runLog.Status = "failed"
 		runLog.Error = err.Error()
 		_ = w.logSvc.UpdateRun(ctx, runLog)
+		if w.command != nil && p.CommandID != "" {
+			w.command.MarkFailed(ctx, p.CommandID, err.Error())
+		}
 		return fmt.Errorf("agent execution failed: %w", err)
 	}
 
@@ -117,6 +126,14 @@ func (w *AsyncWorker) HandleAgentRunTask(ctx context.Context, t *asynq.Task) err
 	runLog.LatencyMs = result.LatencyMs
 
 	_ = w.logSvc.UpdateRun(ctx, runLog)
+	if w.command != nil && p.CommandID != "" {
+		runOutput := result.Output
+		tokenCost := 0
+		if result.Usage != nil {
+			tokenCost = result.Usage.TotalTokens
+		}
+		w.command.MarkCompleted(ctx, p.CommandID, runOutput, int(result.LatencyMs), tokenCost)
+	}
 
 	return nil
 }

@@ -1,130 +1,130 @@
-# 前端架构方案分析：Monorepo 与模块化设计
+# 前端架构分析：Polyglot Monorepo
 
-> **版本**: v1.0
-> **日期**: 2025-11-18
-> **状态**: 已通过
-> **作者**: Codex Analysis AI
+**meta.date:** 2025-11-19 12:48, 中国时区 (UTC+8)
+**meta.author:** Codex 分析AI
 
-## 1. 背景与术语澄清
+## 1. 架构定义：Polyglot Monorepo
 
-用户提到的 "MorePE" 架构方案推测为 **Monorepo (单一代码仓库)** 的误拼。在当前 AgentFlowCreativeHub 项目语境下，我们需要探讨的是如何在一个已经包含 Go 后端的仓库中，最佳地组织 React 前端代码。
+本项目将采用 **Polyglot Monorepo**（多语言单体仓库）架构。该模式的特点是在同一个代码仓库中管理多个使用不同技术栈的项目。具体到本项目，我们将在 `AgentFlowCreativeHub` 仓库中同时管理：
 
-本项目实际上已经是一个 **Polyglot Monorepo (多语言单一仓库)**：
-- `backend/`: Go 语言服务
-- `frontend/`: (计划中) React/TypeScript 应用
-- `docs/`: 项目文档
-- `deploy/`: (计划中) 部署配置
+*   **后端 (Backend):** 使用 Go 语言实现。
+*   **前端 (Frontend):** 使用 React (Vite) 技术栈。
 
-核心问题在于：**前端内部 (`frontend/`) 应该采用何种架构？**
+这种模式的优势在于能够简化跨团队协作、统一构建与部署流程，并促进代码共享。
 
-## 2. 架构选项分析
+## 2. 架构权衡分析
 
-针对企业级管理控制台（React + TypeScript），主要有三种架构模式可选：
+在前端实现上，我们评估了以下三种主流方案：
 
-### 2.1 传统分层架构 (Layered Monolith)
-按技术职责分层，如 `components/`, `pages/`, `utils/`。
+| 方案 | 优点 | 缺点 | 适用场景 |
+| :--- | :--- | :--- | :--- |
+| **单体前端 (Monolith Frontend)** | 结构简单，易于上手和管理。 | 随着功能增加，代码库会变得臃肿，难以维护和扩展。 | 小型项目或项目初期。 |
+| **模块化单体前端 (Modular Monolith Frontend)** | 在单体结构内按功能模块划分，兼顾了简单性和可扩展性。 | 模块间边界依赖约定，不如物理隔离清晰。 | 大多数中大型项目的理想起点。 |
+| **微前端 (Micro-Frontends)** | 各团队可独立开发、部署和扩展，技术栈灵活。 | 架构复杂，增加了集成、路由和状态管理的难度。 | 拥有多个独立子系统的大型复杂应用。 |
 
-*   **✅ 优点**：简单，符合大多数 React 教程，上手快。
-*   **❌ 缺点**：随着业务增长，文件分散。修改一个功能（如"用户管理"）需要跳跃于 page, service, type, component 多个目录之间。耦合度高，难以拆分。
+**结论与建议：**
 
-### 2.2 JS Monorepo (Workspace 模式)
-使用 pnpm workspace 或 Nx/Turborepo，将前端拆分为 `apps/` 和 `packages/`。
+考虑到项目当前阶段，我们推荐采用 **模块化单-体前端 (Modular Monolith Frontend)** 方案。它在保持开发简便性的同时，为未来的功能扩展预留了空间。当项目复杂度显著增加时，可以平滑地演进到微前端架构。
 
-*   **✅ 优点**：物理隔离，复用性最强（如独立出 `ui-kit` 包）。
-*   **❌ 缺点**：配置复杂，构建链条长，对当前仅有一个前端应用（管理控制台）的项目来说属于 **过度设计 (Over-engineering)**，违背 KISS 原则。
+## 3. 建议的目录结构
 
-### 2.3 模块化单体 (Modular Monolith) - **推荐方案** 🌟
-在单体应用内部，按**业务领域 (Feature/Domain)** 而非**技术职责**组织代码。
-
-*   **✅ 优点**：
-    *   **高内聚**：所有关于"工作流"的代码（API、状态、组件、路由）都在 `src/features/workflow` 下。
-    *   **低耦合**：模块间通过明确的 `index.ts` 暴露接口。
-    *   **易迁移**：未来若需拆分微前端或独立包，直接移动文件夹即可。
-    *   **无需复杂工具**：不需要 pnpm workspace 或 Turborepo，标准 Vite 配置即可支持。
-
-## 3. 推荐架构：基于领域的模块化单体
-
-我们建议采用 **Feature-Sliced Design (FSD)** 的简化版。
-
-### 3.1 目录结构
+基于“模块化单体前端”的理念，我们提出以下目录结构：
 
 ```text
-frontend/
-├── src/
-│   ├── app/                 # 应用全局配置
-│   │   ├── App.tsx          # 根组件
-│   │   ├── routes.tsx       # 顶层路由定义
-│   │   └── store.ts         # 全局 Redux Store 组装
-│   │
-│   ├── assets/              # 静态资源
-│   │
-│   ├── components/          # 全局通用组件 (非业务相关)
-│   │   ├── Layout/          # 全局布局 (Sidebar, Header)
-│   │   └── Loading/         # 通用加载态
-│   │
-│   ├── features/            # 核心业务模块 (Feature Slices) 🌟
-│   │   ├── auth/            # 认证模块
-│   │   │   ├── api/         # 登录/注册 API
-│   │   │   ├── slice/       # Redux User Slice
-│   │   │   ├── components/  # LoginForm, ProtectedRoute
-│   │   │   └── index.ts     # 模块对外出口
-│   │   │
-│   │   ├── workflow/        # 工作流模块
-│   │   │   ├── api/         # 工作流 CRUD
-│   │   │   ├── types/       # 节点/边类型定义
-│   │   │   ├── components/  # FlowEditor, NodeItem
-│   │   │   └── pages/       # WorkflowList, WorkflowDetail
-│   │   │
-│   │   └── agent/           # Agent 管理模块
-│   │
-│   ├── hooks/               # 全局通用 Hooks (useTheme, useDebounce)
-│   │
-│   ├── lib/                 # 第三方库配置 (axios, echarts)
-│   │
-│   └── utils/               # 全局工具函数
-│
-├── build/                   # 构建脚本
-├── package.json
-├── tsconfig.json
-└── vite.config.ts
+AgentFlowCreativeHub/
+├── backend/          # Go 后端应用
+├── frontend/         # React + Vite 前端应用
+│   ├── public/
+│   ├── src/
+│   │   ├── app/      # 应用级配置 (路由、状态管理、全局样式)
+│   │   ├── features/ # 核心功能模块 (按领域划分)
+│   │   │   ├── agents/
+│   │   │   ├── workflows/
+│   │   │   └── auth/
+│   │   ├── shared/   # 跨功能共享模块
+│   │   │   ├── ui/     # 通用 UI 组件 (按钮, 输入框等)
+│   │   │   ├── hooks/  # 自定义 Hooks
+│   │   │   ├── utils/  # 工具函数
+│   │   │   └── api/    # API 客户端与类型定义
+│   │   └── main.tsx  # 应用入口
+│   ├── package.json
+│   ├── tsconfig.json
+│   └── vite.config.ts
+└── docker-compose.yml
 ```
 
-### 3.2 模块内部结构 (Inside a Feature)
+**结构说明：**
 
-每个 `features/xxx` 目录应自包含：
+*   **`features/`**: 按业务领域划分模块，每个模块内部高内聚，包含自己的组件、状态和逻辑。
+*   **`shared/`**: 存放可被多个 `features` 复用的代码，例如 UI 组件库、工具函数和 API 定义。
+*   **`app/`**: 负责整合所有模块，配置路由和全局状态。
 
-```text
-features/workflow/
-├── api/           # 该业务特有的 API 请求
-├── assets/        # 该业务特有的图片/图标
-├── components/    # 业务组件 (只在当前业务使用)
-├── hooks/         # 业务 Hooks
-├── pages/         # 页面级组件 (由路由引用)
-├── slice/         # Redux Slice (状态管理)
-├── types.ts       # 类型定义
-└── index.ts       # 公共导出 (Public API)
+## 4. 集成策略
+
+为了确保前后端高效协作，我们将实施以下集成策略：
+
+*   **统一构建脚本**: 使用 `Makefile` 或根目录的 `package.json` 脚本统一管理前后端的构建、测试和启动命令。
+*   **共享 API 类型**:
+    *   后端通过 OpenAPI (Swagger) 规范定义 API 接口。
+    *   前端使用工具（如 `openapi-typescript-codegen`）基于该规范自动生成 TypeScript 类型和 API 客户端，确保前后端数据契约的一致性。
+*   **CI/CD 流水线整合**: 在同一个 CI/CD 流水线中执行前后端的构建、测试和部署任务，简化发布流程。
+
+此文档将作为后续前端实现的技术蓝图。
+
+## 5. 架构可视化
+
+为了更直观地展示模块之间的关系和数据流，以下是建议架构的 Mermaid 图表：
+
+```mermaid
+graph TD
+    subgraph Monorepo Root
+        direction LR
+        Backend[backend Go]
+        Frontend[frontend React]
+    end
+
+    subgraph Frontend Architecture
+        direction TB
+
+        App[app]
+        Features[features]
+        Shared[shared]
+
+        App -- "Manages Routing & Global State" --> Features
+        App -- "Provides Global Context" --> Shared
+        Features -- "Uses" --> Shared
+    end
+
+    subgraph "Feature Modules (examples)"
+        direction TB
+        F_Agents[agents]
+        F_Workflows[workflows]
+        F_Auth[auth]
+
+        Features --> F_Agents
+        Features --> F_Workflows
+        Features --> F_Auth
+    end
+
+    subgraph "Shared Modules"
+        direction TB
+        S_UI[ui - UI Kit]
+        S_Hooks[hooks - Custom Hooks]
+        S_Utils[utils - Utilities]
+        S_API[api - API Client]
+
+        Shared --> S_UI
+        Shared --> S_Hooks
+        Shared --> S_Utils
+        Shared --> S_API
+    end
+
+    Frontend -- "HTTP/REST API Calls" --> Backend
+    Backend -- "Serves Data" --> Frontend
 ```
 
-## 4. 与后端的集成策略
+**图表说明:**
 
-鉴于本项目为 Go 后端 + React 前端，集成是关键。
-
-1.  **类型同步 (Type Safety)**:
-    *   后端使用 OpenAPI (Swagger) 描述接口。
-    *   前端使用 `openapi-typescript-codegen` 或 `orval` 自动生成 TypeScript 类型定义和 API 客户端。
-    *   禁止手动编写 API `interface`，确保前后端契约一致。
-
-2.  **构建集成 (Build Integration)**:
-    *   开发环境：Go 后端 (:8080) 与 Vite 前端 (:3000) 独立运行，通过 `proxy` 解决跨域。
-    *   生产环境：前端 `npm run build` 生成静态文件至 `backend/static` (或独立 Nginx)，实现单一制品部署或前后端分离部署。
-
-## 5. 总结
-
-针对 "MorePE" (Monorepo) 的需求，我们**不建议**引入复杂的 JS Monorepo 工具链（如 Nx/Lerna），因为目前只有一个前端应用。
-
-我们**强烈推荐**采用 **模块化单体 (Modular Monolith)** 架构：
-1.  **物理上**：单一 `frontend` 目录，简单清晰。
-2.  **逻辑上**：按 `features` 强隔离，保持 Monorepo 的模块化优势。
-3.  **演进性**：未来可零成本迁移到 Workspace 模式。
-
-此方案符合项目 `CLAUDE.md` 中的 **"简洁至上 (KISS)"** 和 **"易于维护"** 原则。
+*   **Monorepo Root**: 展示了后端和前端在同一个仓库中的并列关系。
+*   **Frontend Architecture**: 描述了 `app`, `features`, 和 `shared` 三个核心目录之间的依赖关系。`app` 是应用的顶层协调者，`features` 实现具体的业务功能，而 `shared` 提供可复用的能力。
+*   **Data Flow**: `Frontend` 通过 `HTTP/REST API` 与 `Backend` 进行通信，实现了前后端分离。

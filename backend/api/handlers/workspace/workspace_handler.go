@@ -1,13 +1,14 @@
 package workspace
 
 import (
+	"errors"
 	"net/http"
 	"strings"
 
 	response "backend/api/handlers/common"
+	auditpkg "backend/internal/audit"
 	"backend/internal/agent/runtime"
 	"backend/internal/tools"
-	"backend/internal/tools/builtin"
 	workspaceSvc "backend/internal/workspace"
 
 	"github.com/gin-gonic/gin"
@@ -178,8 +179,9 @@ type createStagingDTO struct {
 	AgentID      string         `json:"agentId"`
 	AgentName    string         `json:"agentName"`
 	Command      string         `json:"command"`
-	Metadata     string        `json:"metadata"`
+	Metadata     string         `json:"metadata"`
 	ManualFolder string         `json:"manualFolder"`
+	RequiresSecondary bool      `json:"requiresSecondary"`
 }
 
 // CreateStaging 创建暂存
@@ -204,54 +206,51 @@ func (h *Handler) CreateStaging(c *gin.Context) {
 		Metadata:     dto.Metadata,
 		CreatedBy:    userID,
 		ManualFolder: dto.ManualFolder,
+		RequiresSecondary: dto.RequiresSecondary,
 	})
 	if err != nil {
 		c.JSON(http.StatusBadRequest, response.ErrorResponse{Success: false, Message: err.Error()})
 		return
 	}
+	auditpkg.SetAuditResourceInfo(c, "workspace_staging", staging.ID)
+	auditpkg.SetAuditChanges(c, map[string]any{"fileType": staging.FileType})
 	c.JSON(http.StatusCreated, response.APIResponse{Success: true, Data: staging})
 }
 
-// ApproveStaging 审核通过
-func (h *Handler) ApproveStaging(c *gin.Context) {
+type reviewStagingDTO struct {
+	Action      string `json:"action" binding:"required,oneof=approve reject request_changes"`
+	Reason      string `json:"reason"`
+	ReviewToken string `json:"reviewToken" binding:"required"`
+}
+
+// ReviewStaging 审核处理
+func (h *Handler) ReviewStaging(c *gin.Context) {
 	tenantID := c.GetString("tenant_id")
 	userID := c.GetString("user_id")
 	stagingID := c.Param("id")
-	result, err := h.toolExecutor.Execute(c.Request.Context(), &tools.ToolExecutionRequest{
-		TenantID: tenantID,
-		ToolName: builtin.WorkspacePublishToolName,
-		Input: map[string]any{
-			"tenant_id":   tenantID,
-			"staging_id":  stagingID,
-			"reviewer_id": userID,
-		},
-	})
-	if err != nil {
-		c.JSON(http.StatusBadRequest, response.ErrorResponse{Success: false, Message: err.Error()})
-		return
-	}
-	c.JSON(http.StatusOK, response.APIResponse{Success: true, Data: result.Output})
-}
-
-type rejectStagingDTO struct {
-	Reason string `json:"reason" binding:"required,min=2"`
-}
-
-// RejectStaging 驳回
-func (h *Handler) RejectStaging(c *gin.Context) {
-	tenantID := c.GetString("tenant_id")
-	userID := c.GetString("user_id")
-	stagingID := c.Param("id")
-	var dto rejectStagingDTO
+	var dto reviewStagingDTO
 	if err := c.ShouldBindJSON(&dto); err != nil {
 		c.JSON(http.StatusBadRequest, response.ErrorResponse{Success: false, Message: "参数错误: " + err.Error()})
 		return
 	}
-	if err := h.svc.RejectStagingFile(c.Request.Context(), tenantID, stagingID, userID, dto.Reason); err != nil {
+	result, err := h.svc.ReviewStagingFile(c.Request.Context(), &workspaceSvc.ReviewStagingRequest{
+		TenantID:    tenantID,
+		StagingID:   stagingID,
+		ReviewerID:  userID,
+		Action:      workspaceSvc.ReviewAction(dto.Action),
+		Reason:      dto.Reason,
+		ReviewToken: dto.ReviewToken,
+	})
+	if err != nil {
+		if writeStagingError(c, err) {
+			return
+		}
 		c.JSON(http.StatusInternalServerError, response.ErrorResponse{Success: false, Message: err.Error()})
 		return
 	}
-	c.JSON(http.StatusOK, response.APIResponse{Success: true, Message: "已驳回"})
+	auditpkg.SetAuditResourceInfo(c, "workspace_staging", stagingID)
+	auditpkg.SetAuditChanges(c, map[string]any{"action": dto.Action, "status": result.Status})
+	c.JSON(http.StatusOK, response.APIResponse{Success: true, Data: result})
 }
 
 type attachContextDTO struct {
@@ -332,6 +331,15 @@ func buildSnapshot(dto attachContextDTO, nodes []*workspaceSvc.ContextNode) stri
 		parts = append(parts, "备注: "+dto.Notes)
 	}
 	return strings.Join(parts, "\n")
+}
+
+func writeStagingError(c *gin.Context, err error) bool {
+	var stgErr *workspaceSvc.StagingError
+	if errors.As(err, &stgErr) {
+		c.JSON(http.StatusBadRequest, response.ErrorResponse{Success: false, Code: stgErr.Code, Message: stgErr.Message})
+		return true
+	}
+	return false
 }
 
 func trimSnippet(text string) string {

@@ -9,12 +9,29 @@ import (
 
 // Config 应用配置结构
 type Config struct {
-	Server   ServerConfig   `mapstructure:"server"`
-	Database DatabaseConfig `mapstructure:"database"`
-	Redis    RedisConfig    `mapstructure:"redis"`
-	Log      LogConfig      `mapstructure:"log"`
-	AI       AIConfig       `mapstructure:"ai"`
-	RAG      RagConfig      `mapstructure:"rag"`
+	Server    ServerConfig    `mapstructure:"server"`
+	Database  DatabaseConfig  `mapstructure:"database"`
+	Redis     RedisConfig     `mapstructure:"redis"`
+	Log       LogConfig       `mapstructure:"log"`
+	AI        AIConfig        `mapstructure:"ai"`
+	RAG       RagConfig       `mapstructure:"rag"`
+	Workspace WorkspaceConfig `mapstructure:"workspace"`
+}
+
+// WorkspaceConfig 工作区文件系统配置
+type WorkspaceConfig struct {
+	BasePath        string `mapstructure:"base_path"`         // 工作区根目录，默认 ./workspace
+	EnableDiskStore bool   `mapstructure:"enable_disk_store"` // 是否启用磁盘存储
+	MaxFileSize     int64  `mapstructure:"max_file_size"`     // 单文件大小限制（字节），默认 10MB
+	Artifact        ArtifactConfig `mapstructure:"artifact"`
+}
+
+// ArtifactConfig 智能体产出文件配置
+type ArtifactConfig struct {
+	NamingPattern   string `mapstructure:"naming_pattern"`   // 命名模式: {agent}-{type}-{timestamp}-{seq}
+	OrganizeByAgent bool   `mapstructure:"organize_by_agent"` // 按智能体分目录
+	OrganizeBySession bool `mapstructure:"organize_by_session"` // 按会话分目录
+	RetentionDays   int    `mapstructure:"retention_days"`   // 保留天数，0表示永久
 }
 
 // ServerConfig HTTP 服务器配置

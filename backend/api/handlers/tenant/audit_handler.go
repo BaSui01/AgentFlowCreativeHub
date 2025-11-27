@@ -13,7 +13,8 @@ import (
 // AuditHandler 负责处理当前租户的审计日志查询请求。
 //
 // 约定：
-//   GET /api/tenant/audit-logs?from=ISO8601&to=ISO8601&userId=...&action=...&limit=...&offset=...
+//
+//	GET /api/tenant/audit-logs?from=ISO8601&to=ISO8601&userId=...&action=...&limit=...&offset=...
 //
 // 实际路由挂载将在 router 中完成（Task 10）。
 type AuditHandler struct {

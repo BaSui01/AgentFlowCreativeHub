@@ -50,3 +50,14 @@ rag:
       vector_dimension: 1536
       distance: Cosine
       timeout_seconds: 15
+
+# 工作区文件系统配置
+workspace:
+  base_path: ./workspace
+  enable_disk_store: false
+  max_file_size: 10485760  # 10MB
+  artifact:
+    naming_pattern: "{agent}-{type}-{timestamp}-{seq}"
+    organize_by_agent: true
+    organize_by_session: false
+    retention_days: 0  # 0 表示永久保留

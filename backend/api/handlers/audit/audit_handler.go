@@ -156,6 +156,42 @@ func (h *AuditHandler) GetLog(c *gin.Context) {
 	c.JSON(http.StatusOK, log)
 }
 
+// ListTenantAuditLogs 返回当前租户最近的审计日志（限管理员权限）。
+func (h *AuditHandler) GetTenantAuditLogs(c *gin.Context) {
+	userCtx, _ := auth.GetUserContext(c)
+	if userCtx.TenantID == "" {
+		c.JSON(http.StatusForbidden, response.ErrorResponse{Success: false, Message: "无权访问"})
+		return
+	}
+	limit := 10
+	if raw := c.DefaultQuery("limit", "10"); raw != "" {
+		if n := parseInt(raw); n > 0 && n <= 200 {
+			limit = n
+		}
+	}
+	query := &models.AuditLogQuery{
+		TenantID: userCtx.TenantID,
+		Pagination: &types.PaginationRequest{
+			Page:     1,
+			PageSize: limit,
+		},
+	}
+	logs, _, err := h.auditService.QueryLogs(c.Request.Context(), query)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, response.ErrorResponse{Success: false, Message: "查询失败: " + err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, response.ListResponse{
+		Items: logs,
+		Pagination: response.PaginationMeta{
+			Page:      1,
+			PageSize:  limit,
+			Total:     int64(len(logs)),
+			TotalPage: 1,
+		},
+	})
+}
+
 // GetUserActivity 获取用户活动摘要
 // @Summary 获取指定用户活动摘要
 // @Tags Audit

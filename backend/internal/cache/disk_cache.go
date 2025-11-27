@@ -43,6 +43,10 @@ func NewDiskCache(dbPath string, ttl time.Duration, maxSizeGB int) (*DiskCache, 
 		return nil, fmt.Errorf("打开数据库失败: %w", err)
 	}
 
+	// 设置连接池参数以提升并发性能
+	db.SetMaxOpenConns(10)  // 最大打开连接数
+	db.SetMaxIdleConns(5)   // 最大空闲连接数
+
 	// 性能优化设置
 	pragmas := []string{
 		"PRAGMA journal_mode=WAL",           // 写前日志模式,提升并发性能
@@ -50,7 +54,7 @@ func NewDiskCache(dbPath string, ttl time.Duration, maxSizeGB int) (*DiskCache, 
 		"PRAGMA cache_size=-64000",          // 64MB 缓存
 		"PRAGMA temp_store=MEMORY",          // 临时表存储在内存
 		"PRAGMA mmap_size=268435456",        // 256MB 内存映射
-		"PRAGMA busy_timeout=5000",          // 5秒忙等待超时
+		"PRAGMA busy_timeout=10000",         // 10秒忙等待超时 (增加以支持高并发)
 	}
 
 	for _, pragma := range pragmas {
@@ -170,8 +174,8 @@ func (c *DiskCache) Get(ctx context.Context, key string) (*CacheEntry, error) {
 		entry.Metadata = json.RawMessage(metadata.String)
 	}
 
-	// 更新访问统计
-	go c.incrementHitCount(key)
+	// 更新访问统计 (同步执行以确保测试一致性)
+	c.incrementHitCount(key)
 
 	return &entry, nil
 }
@@ -228,6 +232,7 @@ func (c *DiskCache) Set(ctx context.Context, entry *CacheEntry) error {
 }
 
 // incrementHitCount 增加命中计数
+// 注意：此方法是同步执行的，测试时需要考虑这一点
 func (c *DiskCache) incrementHitCount(key string) {
 	query := `
 		UPDATE llm_cache
@@ -235,7 +240,8 @@ func (c *DiskCache) incrementHitCount(key string) {
 		    last_accessed_at = CURRENT_TIMESTAMP
 		WHERE cache_key = ?
 	`
-	c.db.Exec(query, key)
+	// 移除异步执行，改为同步，确保测试时数据一致性
+	_, _ = c.db.Exec(query, key)
 }
 
 // Delete 删除缓存

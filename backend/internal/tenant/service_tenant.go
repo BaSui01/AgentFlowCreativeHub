@@ -26,10 +26,8 @@ type EmailSender interface {
 	SendTenantVerification(ctx context.Context, toEmail, verificationToken string) error
 }
 
-// TenantQuotaRepository persists TenantQuota records.
-type TenantQuotaRepository interface {
-	Insert(ctx context.Context, q *TenantQuota) error
-}
+// TenantQuotaRepository 已移至 repository.go,提供完整的配额仓储接口
+
 
 // AuditLogger records high-level audit events for tenant operations.
 type AuditLogger interface {

@@ -79,6 +79,10 @@ type updateRoleRequest struct {
 	PermissionIDs []string `json:"permissionIds"`
 }
 
+type updateUserRolesRequest struct {
+	RoleIDs []string `json:"roleIds"`
+}
+
 // updateConfigRequest 更新配置请求体。
 type updateConfigRequest struct {
 	DisplayName      *string                     `json:"displayName"`
@@ -383,6 +387,100 @@ func (h *TenantHandler) UpdateRole(c *gin.Context) {
 	c.JSON(http.StatusOK, role)
 }
 
+// ListRoles 获取租户角色及权限
+func (h *TenantHandler) ListRoles(c *gin.Context) {
+	tenantID := c.Param("id")
+	ctx := h.contextWithOverrides(c, tenantID, false)
+	roles, err := h.roleService.ListRoles(ctx)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, response.ErrorResponse{Success: false, Message: err.Error()})
+		return
+	}
+	items := make([]map[string]any, 0, len(roles))
+	for _, r := range roles {
+		items = append(items, map[string]any{
+			"id":            r.Role.ID,
+			"name":          r.Role.Name,
+			"code":          r.Role.Code,
+			"description":   r.Role.Description,
+			"isSystem":      r.Role.IsSystem,
+			"isDefault":     r.Role.IsDefault,
+			"priority":      r.Role.Priority,
+			"permissionIds": r.PermissionIDs,
+			"createdAt":     r.Role.CreatedAt,
+			"updatedAt":     r.Role.UpdatedAt,
+		})
+	}
+	c.JSON(http.StatusOK, response.ListResponse{
+		Items: items,
+		Pagination: response.PaginationMeta{
+			Page:      1,
+			PageSize:  len(items),
+			Total:     int64(len(items)),
+			TotalPage: 1,
+		},
+	})
+}
+
+// DeleteRole 删除角色
+func (h *TenantHandler) DeleteRole(c *gin.Context) {
+	roleID := c.Param("roleId")
+	if roleID == "" {
+		c.JSON(http.StatusBadRequest, response.ErrorResponse{Success: false, Message: "missing roleId"})
+		return
+	}
+	ctx := h.contextWithOverrides(c, c.Param("id"), false)
+	if err := h.roleService.DeleteRole(ctx, roleID); err != nil {
+		c.JSON(http.StatusBadRequest, response.ErrorResponse{Success: false, Message: err.Error()})
+		return
+	}
+	c.Status(http.StatusNoContent)
+}
+
+// ReplaceUserRoles 批量替换用户角色
+func (h *TenantHandler) ReplaceUserRoles(c *gin.Context) {
+	userID := c.Param("userId")
+	if userID == "" {
+		c.JSON(http.StatusBadRequest, response.ErrorResponse{Success: false, Message: "missing userId"})
+		return
+	}
+	var body updateUserRolesRequest
+	if err := c.ShouldBindJSON(&body); err != nil {
+		c.JSON(http.StatusBadRequest, response.ErrorResponse{Success: false, Message: "invalid JSON body"})
+		return
+	}
+	ctx := h.contextWithOverrides(c, c.Param("id"), false)
+	if err := h.roleService.ReplaceUserRoles(ctx, userID, body.RoleIDs); err != nil {
+		c.JSON(http.StatusBadRequest, response.ErrorResponse{Success: false, Message: err.Error()})
+		return
+	}
+	c.Status(http.StatusNoContent)
+}
+
+// ListUserRoles 列出指定用户的角色 ID
+func (h *TenantHandler) ListUserRoles(c *gin.Context) {
+	userID := c.Param("userId")
+	if userID == "" {
+		c.JSON(http.StatusBadRequest, response.ErrorResponse{Success: false, Message: "missing userId"})
+		return
+	}
+	ctx := h.contextWithOverrides(c, c.Param("id"), false)
+	roleIDs, err := h.roleService.ListUserRoles(ctx, userID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, response.ErrorResponse{Success: false, Message: err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, response.ListResponse{
+		Items: roleIDs,
+		Pagination: response.PaginationMeta{
+			Page:      1,
+			PageSize:  len(roleIDs),
+			Total:     int64(len(roleIDs)),
+			TotalPage: 1,
+		},
+	})
+}
+
 // ListPermissions 列出可用权限
 // @Summary 列出权限
 // @Tags Tenants
@@ -406,6 +504,13 @@ func (h *TenantHandler) ListPermissions(c *gin.Context) {
 			TotalPage: 1,
 		},
 	})
+}
+
+// GetPermissionCatalog 返回带多语言的权限字典
+func (h *TenantHandler) GetPermissionCatalog(c *gin.Context) {
+	catalog := tenantSvc.GetPermissionCatalog()
+	c.Header("Cache-Control", "public, max-age=300")
+	c.JSON(http.StatusOK, catalog)
 }
 
 // --- Config APIs ---

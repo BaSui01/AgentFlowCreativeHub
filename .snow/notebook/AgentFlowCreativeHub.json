@@ -1,0 +1,119 @@
+{
+  "backend/api/handlers/agents/execute_handler_test.go": [
+    {
+      "id": "notebook-1764079023052_jt4x28ysz",
+      "filePath": "backend/api/handlers/agents/execute_handler_test.go",
+      "note": "⚠️ AgentResult结构字段修正: Content→Output, Success→Status(\"success\") | 位置: runtime.AgentResult",
+      "createdAt": "2025-11-25T21:57:03.052",
+      "updatedAt": "2025-11-25T21:57:03.052"
+    }
+  ],
+  "backend/api/handlers/agents/agent_handler_test.go": [
+    {
+      "id": "notebook-1764080614230_fgidbdera",
+      "filePath": "backend/api/handlers/agents/agent_handler_test.go",
+      "note": "✅ 阶段二Mock测试升级完成 - 实现了ListAgentConfigs, GetAgentConfig, CreateAgentConfig的完整Mock测试（使用testify/assert验证，Mock Service注入）",
+      "createdAt": "2025-11-25T22:23:34.230",
+      "updatedAt": "2025-11-25T22:23:34.230"
+    }
+  ],
+  "backend/api/handlers/knowledge/kb_handler_test.go": [
+    {
+      "id": "notebook-1764080934777_wuglrwt1t",
+      "filePath": "backend/api/handlers/knowledge/kb_handler_test.go",
+      "note": "✅ 阶段二Mock测试升级完成 - 实现了ListKnowledgeBases, GetKnowledgeBase, CreateKnowledgeBase的完整Mock测试（KBServiceInterface接口Mock）",
+      "createdAt": "2025-11-25T22:28:54.777",
+      "updatedAt": "2025-11-25T22:28:54.777"
+    }
+  ],
+  "backend/api/handlers/agents/agent_handler_http_test.go": [
+    {
+      "id": "notebook-1764081312102_4gnr150f1",
+      "filePath": "backend/api/handlers/agents/agent_handler_http_test.go",
+      "note": "✅ HTTP集成测试完成 - 使用testAgentHandler适配器绕过Handler类型依赖，实现完整HTTP请求响应测试（包含认证中间件、参数解析、JSON响应验证）",
+      "createdAt": "2025-11-25T22:35:12.102",
+      "updatedAt": "2025-11-25T22:35:12.102"
+    }
+  ],
+  "backend/api/handlers/knowledge/kb_handler_http_test.go": [
+    {
+      "id": "notebook-1764082073347_3djvk58sz",
+      "filePath": "backend/api/handlers/knowledge/kb_handler_http_test.go",
+      "note": "✅ knowledge模块KBHandler HTTP集成测试完成 - 5个测试函数（List, Get, Create, Update, Delete）共15个场景，100%通过。使用testKBHandler适配器模式，复用mockAuthMiddleware和helpers.go中的toPaginationMeta",
+      "createdAt": "2025-11-25T22:47:53.347",
+      "updatedAt": "2025-11-25T22:47:53.347"
+    }
+  ],
+  "backend/api/handlers/tenant/tenant_handler_test.go": [
+    {
+      "id": "notebook-1764083791324_tc4vjuedb",
+      "filePath": "backend/api/handlers/tenant/tenant_handler_test.go",
+      "note": "✅ tenant模块HTTP集成测试完成 - 新增4个HTTP测试（ListTenants, GetTenant, UpdateTenant, DeleteTenant），覆盖率从23.3%提升到35.8%（+12.5%）。使用fakeTenantService实现真实Handler测试",
+      "createdAt": "2025-11-25T23:16:31.324",
+      "updatedAt": "2025-11-25T23:16:31.324"
+    }
+  ],
+  "backend/api/handlers/tools/tool_handler_test.go": [
+    {
+      "id": "notebook-1764084884121_1k5alujsy",
+      "filePath": "backend/api/handlers/tools/tool_handler_test.go",
+      "note": "✅ tools模块HTTP集成测试完成 - 新增GetTool和ExecuteTool的HTTP测试（共6个场景），测试工具注册、获取、执行、权限验证等完整流程",
+      "createdAt": "2025-11-25T23:34:44.121",
+      "updatedAt": "2025-11-25T23:34:44.121"
+    }
+  ],
+  "backend/internal/common/types.go": [
+    {
+      "id": "notebook-1764237811037_tymxdzla3",
+      "filePath": "backend/internal/common/types.go",
+      "note": "⚠️ 统一请求响应格式已创建 - 所有新增Service应使用PaginationRequest、FilterRequest、ListResponse等标准类型,避免重复定义",
+      "createdAt": "2025-11-27T18:03:31.037",
+      "updatedAt": "2025-11-27T18:03:31.037"
+    }
+  ],
+  "backend/internal/metrics/service.go": [
+    {
+      "id": "notebook-1764238961035_93x0pvxks",
+      "filePath": "backend/internal/metrics/service.go",
+      "note": "⚠️ MetricsService已创建 - 提供AI模型调用统计、成本分析、工作流监控等功能。数据库需创建model_call_logs和workflow_execution_logs表",
+      "createdAt": "2025-11-27T18:22:41.035",
+      "updatedAt": "2025-11-27T18:22:41.035"
+    }
+  ],
+  "backend/internal/notification/service.go": [
+    {
+      "id": "notebook-1764239819197_vcq5sg9bg",
+      "filePath": "backend/internal/notification/service.go",
+      "note": "⚠️ NotificationConfigService已完成 - 用户通知偏好管理服务：\n- 支持渠道启用/禁用 (email, webhook, websocket等)\n- 支持分类订阅 (approval, workflow, system等)\n- 支持静音时段设置 (跨天处理)\n- 支持租户级配置 (SMTP, Webhook, 限流)\n- 支持通知历史记录与重试\n- 已集成到依赖注入（wire.go）\n- 数据库迁移：db/migrations/0013_notification_preferences.sql",
+      "createdAt": "2025-11-27T18:36:59.197",
+      "updatedAt": "2025-11-27T18:36:59.197"
+    }
+  ],
+  "backend/internal/tenant/service_quota.go": [
+    {
+      "id": "notebook-1764239997853_a785pdev6",
+      "filePath": "backend/internal/tenant/service_quota.go",
+      "note": "⚠️ 修复了int64类型max函数问题 - line 384: 使用条件判断代替max函数处理UsedTokensThisMonth，避免类型不匹配",
+      "createdAt": "2025-11-27T18:39:57.853",
+      "updatedAt": "2025-11-27T18:39:57.853"
+    }
+  ],
+  "backend/internal/common/base_service_test.go": [
+    {
+      "id": "notebook-1764240172446_8r9oewlon",
+      "filePath": "backend/internal/common/base_service_test.go",
+      "note": "✅ BaseService 单元测试已完成（435行）- 包含14个测试用例：租户过滤、软删除、分页、排序、组合查询、CRUD操作、事务、批量操作等。注意：需要CGO_ENABLED=1才能运行（SQLite依赖），Windows下可能失败。测试覆盖率目标：80%+",
+      "createdAt": "2025-11-27T18:42:52.446",
+      "updatedAt": "2025-11-27T18:42:52.446"
+    }
+  ],
+  "docs/API_SERVICE_LAYER_COMPLETION_REPORT.md": [
+    {
+      "id": "notebook-1764240332990_4bngnjv2k",
+      "filePath": "docs/API_SERVICE_LAYER_COMPLETION_REPORT.md",
+      "note": "✅ API接口服务层架构改进 - 完成报告：7个核心任务100%完成，新增2400+行代码，包含NotificationConfigService、BaseService单元测试、Handler迁移指南等。详细记录了技术亮点、架构改进效果、遇到的挑战和最佳实践。",
+      "createdAt": "2025-11-27T18:45:32.990",
+      "updatedAt": "2025-11-27T18:45:32.990"
+    }
+  ]
+}

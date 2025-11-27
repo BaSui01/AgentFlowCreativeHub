@@ -239,7 +239,7 @@ func (s *ModelService) CreateModel(ctx context.Context, req *CreateModelRequest)
 	if err := s.db.WithContext(ctx).
 		Model(&Model{}).
 		Scopes(common.NotDeleted()).
-		Where("tenant_id = ? AND provider = ? AND model_identifier = ?", 
+		Where("tenant_id = ? AND provider = ? AND model_identifier = ?",
 			req.TenantID, req.Provider, req.ModelIdentifier).
 		Count(&count).Error; err != nil {
 		return nil, fmt.Errorf("检查模型是否存在失败: %w", err)
@@ -336,7 +336,7 @@ func (s *ModelService) UpdateModel(ctx context.Context, tenantID, modelID string
 		return nil, fmt.Errorf("更新模型失败: %w", err)
 	}
 
-s.cache.invalidateTenant(tenantID)
+	s.cache.invalidateTenant(tenantID)
 
 	// 重新查询返回最新数据
 	return s.GetModel(ctx, tenantID, modelID)
@@ -362,7 +362,7 @@ func (s *ModelService) DeleteModel(ctx context.Context, tenantID, modelID, opera
 		return fmt.Errorf("删除模型失败: %w", err)
 	}
 
-s.cache.invalidateTenant(tenantID)
+	s.cache.invalidateTenant(tenantID)
 
 	return nil
 }
@@ -444,6 +444,41 @@ func (s *ModelService) SeedDefaultModels(ctx context.Context, tenantID string) e
 			ContextWindow:      8191,
 			SupportedLanguages: []string{"zh", "en", "ja", "ko"},
 		},
+		// Google Gemini
+		{
+			TenantID:        tenantID,
+			Name:            "Gemini 1.5 Pro",
+			Provider:        "gemini",
+			ModelIdentifier: "gemini-1.5-pro",
+			Type:            "chat",
+			Description:     "Google Gemini 旗舰模型，支持长上下文与多模态",
+			Capabilities: map[string]any{
+				"streaming":        true,
+				"function_calling": true,
+				"vision":           true,
+			},
+			InputCostPer1K:     0.0025,
+			OutputCostPer1K:    0.0075,
+			MaxTokens:          8192,
+			ContextWindow:      2000000,
+			SupportedLanguages: []string{"zh", "en", "ja", "ko"},
+		},
+		{
+			TenantID:        tenantID,
+			Name:            "Gemini Embedding 001",
+			Provider:        "gemini",
+			ModelIdentifier: "gemini-embedding-001",
+			Type:            "embedding",
+			Description:     "Google Gemini 官方向量化模型",
+			Capabilities: map[string]any{
+				"dimensions": 3072,
+			},
+			InputCostPer1K:     0.00013,
+			OutputCostPer1K:    0,
+			MaxTokens:          2048,
+			ContextWindow:      2048,
+			SupportedLanguages: []string{"zh", "en", "ja", "ko"},
+		},
 	}
 
 	// 批量创建
@@ -463,13 +498,13 @@ func (s *ModelService) SeedDefaultModels(ctx context.Context, tenantID string) e
 // GetModelCallStats 获取模型调用统计
 func (s *ModelService) GetModelCallStats(ctx context.Context, tenantID, modelID string, startTime, endTime time.Time) (map[string]any, error) {
 	var stats struct {
-		TotalCalls       int64   `json:"total_calls"`
-		TotalTokens      int64   `json:"total_tokens"`
-		TotalCost        float64 `json:"total_cost"`
-		AvgLatencyMs     float64 `json:"avg_latency_ms"`
-		SuccessRate      float64 `json:"success_rate"`
-		TotalPromptTokens int64  `json:"total_prompt_tokens"`
-		TotalCompletionTokens int64 `json:"total_completion_tokens"`
+		TotalCalls            int64   `json:"total_calls"`
+		TotalTokens           int64   `json:"total_tokens"`
+		TotalCost             float64 `json:"total_cost"`
+		AvgLatencyMs          float64 `json:"avg_latency_ms"`
+		SuccessRate           float64 `json:"success_rate"`
+		TotalPromptTokens     int64   `json:"total_prompt_tokens"`
+		TotalCompletionTokens int64   `json:"total_completion_tokens"`
 	}
 
 	query := s.db.WithContext(ctx).

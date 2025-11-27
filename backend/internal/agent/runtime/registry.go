@@ -170,22 +170,22 @@ func (r *Registry) createAgent(ctx context.Context, config *agentpkg.AgentConfig
 		agentConfig.PromptTemplateID = &config.PromptTemplateID
 	}
 
-	// 根据类型创建对应的 Agent
+	// 根据类型创建对应的 Agent（所有 Agent 都支持工具调用）
 	switch config.AgentType {
 	case "writer":
 		return NewWriterAgent(agentConfig, modelClient, r.ragHelper, r.promptEngine, r.toolHelper), nil
 	case "reviewer":
-		return NewReviewerAgent(agentConfig, modelClient, r.ragHelper, r.promptEngine), nil
+		return NewReviewerAgent(agentConfig, modelClient, r.ragHelper, r.promptEngine, r.toolHelper), nil
 	case "formatter":
-		return NewFormatterAgent(agentConfig, modelClient, r.ragHelper, r.promptEngine), nil
+		return NewFormatterAgent(agentConfig, modelClient, r.ragHelper, r.promptEngine, r.toolHelper), nil
 	case "planner":
-		return NewPlannerAgent(agentConfig, modelClient, r.ragHelper, r.promptEngine, r.memoryService), nil
+		return NewPlannerAgent(agentConfig, modelClient, r.ragHelper, r.promptEngine, r.memoryService, r.toolHelper), nil
 	case "translator":
-		return NewTranslatorAgent(agentConfig, modelClient, r.ragHelper, r.promptEngine), nil
+		return NewTranslatorAgent(agentConfig, modelClient, r.ragHelper, r.promptEngine, r.toolHelper), nil
 	case "analyzer":
-		return NewAnalyzerAgent(agentConfig, modelClient, r.ragHelper, r.promptEngine), nil
+		return NewAnalyzerAgent(agentConfig, modelClient, r.ragHelper, r.promptEngine, r.toolHelper), nil
 	case "researcher":
-		return NewResearcherAgent(agentConfig, modelClient, r.ragHelper, r.promptEngine), nil
+		return NewResearcherAgent(agentConfig, modelClient, r.ragHelper, r.promptEngine, r.toolHelper), nil
 	default:
 		return nil, fmt.Errorf("不支持的 Agent 类型: %s", config.AgentType)
 	}

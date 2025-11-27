@@ -1,4 +1,4 @@
-# 🎨 MultiAgent Creative Hub
+# 🎨 AgentFlowCreativeHub
 
 > **多 Agent 协作创作平台** —— 面向团队与企业的智能化、标准化、可扩展内容生产中枢
 
@@ -9,7 +9,7 @@
 
 ## 📖 项目概览
 
-**MultiAgent Creative Hub** 是一个面向「多 Agent 协同创作」场景的开放平台，聚焦三件事：
+**AgentFlowCreativeHub** 是一个面向「多 Agent 协同创作」场景的开放平台，聚焦三件事：
 
 1. **把复杂创作流程拆成可编排的任务链**（Workflow + Orchestrator）
 2. **用不同能力的 Agent 分工协作完成任务链**（多角色、多模型、多策略）
@@ -84,8 +84,8 @@
 #### 1. 克隆项目
 
 ```bash
-git clone https://github.com/yourusername/multi-agent-creative-hub.git
-cd multi-agent-creative-hub
+git clone https://github.com/yourusername/AgentFlowCreativeHub.git
+cd AgentFlowCreativeHub
 ```
 
 #### 2. 环境配置
@@ -172,7 +172,7 @@ npm run dev
 ### 完整 go.mod 示例
 
 ```go
-module github.com/yourusername/multi-agent-creative-hub
+module github.com/yourusername/AgentFlowCreativeHub
 
 go 1.21
 
@@ -301,7 +301,7 @@ go get gorm.io/gorm@latest
 
 ```bash
 # 创建 go.mod
-go mod init github.com/yourusername/multi-agent-creative-hub
+go mod init github.com/yourusername/AgentFlowCreativeHub
 
 # 添加依赖
 go get github.com/sashabaranov/go-openai@latest
@@ -369,7 +369,7 @@ git config --global url."git@github.com:".insteadOf "https://github.com/"
 > 实际目录可在落地开发时逐步对齐此结构。
 
 ```bash
-Multi-Agent-Creative-Hub/
+AgentFlowCreativeHub/
 ├── backend/                 # Go 后端统一实现（网关 + Orchestrator + Agent Runtime）
 │   ├── api/                 # API 接口定义
 │   │   ├── handlers/        # HTTP 处理器

@@ -4,6 +4,10 @@ import { AuthLayout } from '@/shared/ui/layouts/AuthLayout';
 import { DashboardPage } from '@/pages/dashboard/DashboardPage';
 import { LoginPage } from '@/pages/auth/LoginPage';
 import { ProtectedRoute } from '@/shared/ui/ProtectedRoute';
+import { PermissionGuard } from '@/shared/ui/PermissionGuard';
+import { PERMISSIONS } from '@/features/auth/model/use-authorization';
+import RoleManagementPage from '@/pages/admin/RoleManagementPage';
+import OperationsCenterPage from '@/pages/admin/OperationsCenterPage';
 
 const router = createBrowserRouter([
   {
@@ -17,6 +21,28 @@ const router = createBrowserRouter([
       {
         path: 'dashboard',
         element: <DashboardPage />,
+      },
+      {
+        path: 'admin/roles',
+        element: (
+          <PermissionGuard
+            requiredPermissions={[PERMISSIONS.MANAGE_ROLES]}
+            fallback={<Navigate to="/dashboard" replace />}
+          >
+            <RoleManagementPage />
+          </PermissionGuard>
+        ),
+      },
+      {
+        path: 'admin/operations',
+        element: (
+          <PermissionGuard
+            requiredPermissions={[PERMISSIONS.WORKSPACE_REVIEW, PERMISSIONS.COMMAND_EXECUTE]}
+            fallback={<Navigate to="/dashboard" replace />}
+          >
+            <OperationsCenterPage />
+          </PermissionGuard>
+        ),
       },
       {
         path: '/',

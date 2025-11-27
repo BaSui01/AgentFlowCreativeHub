@@ -1,13 +1,16 @@
 package models
 
 import (
+	"errors"
 	"net/http"
 	"strconv"
 	"time"
 
+	"backend/internal/common"
 	"backend/internal/models"
 
 	"github.com/gin-gonic/gin"
+	"gorm.io/gorm"
 )
 
 type createCredentialRequest struct {
@@ -21,13 +24,13 @@ type createCredentialRequest struct {
 
 // ModelHandler AI 模型管理 Handler
 type ModelHandler struct {
-	service            *models.ModelService
-	discoveryService   *models.ModelDiscoveryService
-	credentialService  *models.ModelCredentialService
+	service            models.ModelServiceInterface
+	discoveryService   models.ModelDiscoveryServiceInterface
+	credentialService  models.ModelCredentialServiceInterface
 }
 
 // NewModelHandler 创建 ModelHandler 实例
-func NewModelHandler(service *models.ModelService, discoveryService *models.ModelDiscoveryService, credentialService *models.ModelCredentialService) *ModelHandler {
+func NewModelHandler(service models.ModelServiceInterface, discoveryService models.ModelDiscoveryServiceInterface, credentialService models.ModelCredentialServiceInterface) *ModelHandler {
 	return &ModelHandler{
 		service:           service,
 		discoveryService:  discoveryService,
@@ -64,13 +67,12 @@ func (h *ModelHandler) ListModels(c *gin.Context) {
 	// 调用 Service
 	resp, err := h.service.ListModels(c.Request.Context(), req)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"error": err.Error(),
-		})
+		common.ResponseError(c, common.CodeInternalError, err.Error())
 		return
 	}
 
-	c.JSON(http.StatusOK, resp)
+	// 返回统一格式（兼容旧的响应结构）
+	c.JSON(http.StatusOK, common.SuccessResponse(resp))
 }
 
 // GetModel 查询单个模型
@@ -81,13 +83,15 @@ func (h *ModelHandler) GetModel(c *gin.Context) {
 
 	model, err := h.service.GetModel(c.Request.Context(), tenantID, modelID)
 	if err != nil {
-		c.JSON(http.StatusNotFound, gin.H{
-			"error": err.Error(),
-		})
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			common.ResponseNotFound(c, "模型不存在")
+			return
+		}
+		common.ResponseError(c, common.CodeInternalError, err.Error())
 		return
 	}
 
-	c.JSON(http.StatusOK, model)
+	common.ResponseSuccess(c, model)
 }
 
 // CreateModel 创建模型
@@ -97,9 +101,7 @@ func (h *ModelHandler) CreateModel(c *gin.Context) {
 
 	var req models.CreateModelRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"error": "请求参数错误: " + err.Error(),
-		})
+		common.ResponseBadRequest(c, "请求参数错误: "+err.Error())
 		return
 	}
 
@@ -107,13 +109,16 @@ func (h *ModelHandler) CreateModel(c *gin.Context) {
 
 	model, err := h.service.CreateModel(c.Request.Context(), &req)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"error": err.Error(),
-		})
+		// 判断是否为业务错误
+		if bizErr, ok := err.(*common.BusinessError); ok {
+			common.ResponseBusinessError(c, bizErr)
+			return
+		}
+		common.ResponseError(c, common.CodeInternalError, err.Error())
 		return
 	}
 
-	c.JSON(http.StatusCreated, model)
+	common.ResponseSuccessMessage(c, "模型创建成功", model)
 }
 
 // UpdateModel 更新模型
@@ -124,21 +129,26 @@ func (h *ModelHandler) UpdateModel(c *gin.Context) {
 
 	var req models.UpdateModelRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"error": "请求参数错误: " + err.Error(),
-		})
+		common.ResponseBadRequest(c, "请求参数错误: "+err.Error())
 		return
 	}
 
 	model, err := h.service.UpdateModel(c.Request.Context(), tenantID, modelID, &req)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"error": err.Error(),
-		})
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			common.ResponseNotFound(c, "模型不存在")
+			return
+		}
+		// 判断是否为业务错误
+		if bizErr, ok := err.(*common.BusinessError); ok {
+			common.ResponseBusinessError(c, bizErr)
+			return
+		}
+		common.ResponseError(c, common.CodeInternalError, err.Error())
 		return
 	}
 
-	c.JSON(http.StatusOK, model)
+	common.ResponseSuccessMessage(c, "模型更新成功", model)
 }
 
 // DeleteModel 删除模型
@@ -149,15 +159,15 @@ func (h *ModelHandler) DeleteModel(c *gin.Context) {
 	operatorID := c.GetString("user_id") // 从上下文获取操作者 ID
 
 	if err := h.service.DeleteModel(c.Request.Context(), tenantID, modelID, operatorID); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"error": err.Error(),
-		})
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			common.ResponseNotFound(c, "模型不存在")
+			return
+		}
+		common.ResponseError(c, common.CodeInternalError, err.Error())
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{
-		"message": "模型删除成功",
-	})
+	common.ResponseSuccessMessage(c, "模型删除成功", nil)
 }
 
 // GetModelStats 获取模型统计

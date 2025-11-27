@@ -94,6 +94,9 @@ type Permission struct {
 	ID       string `json:"id" gorm:"primaryKey;type:uuid"`
 	TenantID string `json:"tenantId" gorm:"type:uuid;index"` // NULL 表示全局权限
 
+	Code        string `json:"code" gorm:"size:128;uniqueIndex"`
+	Name        string `json:"name" gorm:"size:255"`
+	Category    string `json:"category" gorm:"size:64"`
 	Resource    string `json:"resource" gorm:"size:100;not null"`
 	Action      string `json:"action" gorm:"size:100;not null"`
 	Description string `json:"description" gorm:"type:text"`

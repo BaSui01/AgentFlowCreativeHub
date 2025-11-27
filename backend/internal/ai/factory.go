@@ -13,8 +13,8 @@ import (
 	"backend/internal/ai/google"
 	"backend/internal/ai/ollama"
 	"backend/internal/ai/openai"
-	"backend/internal/security"
 	modelspkg "backend/internal/models"
+	"backend/internal/security"
 
 	"gorm.io/gorm"
 )
@@ -88,7 +88,7 @@ func (f *ClientFactory) GetClient(ctx context.Context, tenantID, modelID string)
 			config.BaseURL = "https://api.openai.com/v1"
 		case "anthropic":
 			config.BaseURL = "https://api.anthropic.com"
-		case "google":
+		case "google", "gemini":
 			config.BaseURL = "https://generativelanguage.googleapis.com/v1beta"
 		case "azure":
 			config.BaseURL = getAPIKey("AZURE_OPENAI_ENDPOINT")
@@ -142,7 +142,7 @@ func (f *ClientFactory) createClient(config *ClientConfig, apiFormat string) (Mo
 		switch config.Provider {
 		case "anthropic":
 			format = "claude"
-		case "google":
+		case "google", "gemini":
 			format = "gemini"
 		case "ollama":
 			format = "ollama"
@@ -238,6 +238,7 @@ func (f *ClientFactory) resolveCredentials(ctx context.Context, model *modelspkg
 		"openai":    "OPENAI_API_KEY",
 		"anthropic": "ANTHROPIC_API_KEY",
 		"google":    "GOOGLE_API_KEY",
+		"gemini":    "GEMINI_API_KEY",
 		"azure":     "AZURE_OPENAI_API_KEY",
 		"deepseek":  "DEEPSEEK_API_KEY",
 		"qwen":      "QWEN_API_KEY",
@@ -246,6 +247,12 @@ func (f *ClientFactory) resolveCredentials(ctx context.Context, model *modelspkg
 	if envVar, ok := envKeyMap[model.Provider]; ok {
 		if val := getAPIKey(envVar); strings.TrimSpace(val) != "" {
 			return strings.TrimSpace(val), "", nil
+		}
+		// Gemini 兼容 GOOGLE_API_KEY，以便复用既有配置
+		if model.Provider == "gemini" {
+			if val := strings.TrimSpace(getAPIKey("GOOGLE_API_KEY")); val != "" {
+				return val, "", nil
+			}
 		}
 	}
 

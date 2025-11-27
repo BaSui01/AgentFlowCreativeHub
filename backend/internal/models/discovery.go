@@ -38,6 +38,8 @@ func (s *ModelDiscoveryService) SyncModelsFromProvider(ctx context.Context, tena
 	switch provider {
 	case "google":
 		models, err = s.getGeminiModels()
+	case "gemini":
+		models, err = s.getGeminiModels()
 	case "deepseek":
 		models, err = s.getDeepSeekModels()
 	case "qwen":
@@ -103,15 +105,15 @@ func (s *ModelDiscoveryService) SyncModelsFromProvider(ctx context.Context, tena
 		} else if result.Error == nil {
 			// 更新现有模型
 			updates := map[string]any{
-				"name":              modelInfo.Name,
-				"description":       modelInfo.Description,
-				"max_tokens":        modelInfo.MaxTokens,
-				"context_window":    modelInfo.ContextWindow,
-				"input_cost_per_1k": modelInfo.InputCostPer1K,
+				"name":               modelInfo.Name,
+				"description":        modelInfo.Description,
+				"max_tokens":         modelInfo.MaxTokens,
+				"context_window":     modelInfo.ContextWindow,
+				"input_cost_per_1k":  modelInfo.InputCostPer1K,
 				"output_cost_per_1k": modelInfo.OutputCostPer1K,
-				"features":          modelInfo.Features,
-				"last_synced_at":    now,
-				"updated_at":        now,
+				"features":           modelInfo.Features,
+				"last_synced_at":     now,
+				"updated_at":         now,
 			}
 
 			if err := s.db.WithContext(ctx).Model(&existingModel).Updates(updates).Error; err != nil {
@@ -128,7 +130,7 @@ func (s *ModelDiscoveryService) SyncModelsFromProvider(ctx context.Context, tena
 
 // AutoDiscoverModels 自动发现所有提供商的模型
 func (s *ModelDiscoveryService) AutoDiscoverModels(ctx context.Context, tenantID string) (map[string]int, error) {
-	providers := []string{"google", "deepseek", "qwen", "ollama", "openai", "anthropic"}
+	providers := []string{"gemini", "deepseek", "qwen", "ollama", "openai", "anthropic"}
 	results := make(map[string]int)
 
 	for _, provider := range providers {
@@ -217,7 +219,7 @@ func (s *ModelDiscoveryService) getGeminiModels() ([]ModelInfo, error) {
 			Description:     fmt.Sprintf("Google %s", m.Name),
 			MaxTokens:       m.MaxTokens,
 			ContextWindow:   m.ContextWindow,
-			InputCostPer1K:  0.0,  // Gemini 定价需要查询官网
+			InputCostPer1K:  0.0, // Gemini 定价需要查询官网
 			OutputCostPer1K: 0.0,
 			Features:        features,
 		})
@@ -467,7 +469,7 @@ func getAPIFormat(provider string) string {
 		return "openai"
 	case "anthropic":
 		return "claude"
-	case "google":
+	case "google", "gemini":
 		return "gemini"
 	default:
 		return "openai"

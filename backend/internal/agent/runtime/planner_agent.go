@@ -19,6 +19,7 @@ type PlannerAgent struct {
 	config        *AgentConfig
 	modelClient   ai.ModelClient
 	ragHelper     *RAGHelper
+	toolHelper    *ToolHelper
 	memoryService MemoryService
 	promptEngine  *prompt.Engine
 	name          string
@@ -26,11 +27,12 @@ type PlannerAgent struct {
 }
 
 // NewPlannerAgent 创建 PlannerAgent
-func NewPlannerAgent(config *AgentConfig, modelClient ai.ModelClient, ragHelper *RAGHelper, promptEngine *prompt.Engine, memoryService MemoryService) *PlannerAgent {
+func NewPlannerAgent(config *AgentConfig, modelClient ai.ModelClient, ragHelper *RAGHelper, promptEngine *prompt.Engine, memoryService MemoryService, toolHelper *ToolHelper) *PlannerAgent {
 	return &PlannerAgent{
 		config:        config,
 		modelClient:   modelClient,
 		ragHelper:     ragHelper,
+		toolHelper:    toolHelper,
 		memoryService: memoryService,
 		promptEngine:  promptEngine,
 		name:          config.Name,
@@ -93,48 +95,91 @@ func (a *PlannerAgent) Execute(ctx context.Context, input *AgentInput) (*AgentRe
 		}, err
 	}
 
-	// 调用 AI 模型
-	_, aiSpan := a.tracer.Start(ctx, "AI.ChatCompletion")
-	resp, err := a.modelClient.ChatCompletion(ctx, &ai.ChatCompletionRequest{
-		Messages:    messages,
-		Temperature: a.config.Temperature,
-		MaxTokens:   a.config.MaxTokens,
-	})
-	aiSpan.End()
+	var output string
+	var usage *Usage
+	var modelID string
+
+	// 检查是否允许使用工具
+	if a.toolHelper != nil && len(a.config.AllowedTools) > 0 {
+		_, toolSpan := a.tracer.Start(ctx, "ToolHelper.ExecuteWithTools")
+		resp, err := a.toolHelper.ExecuteWithTools(
+			ctx,
+			a.modelClient,
+			messages,
+			a.config.Temperature,
+			a.config.MaxTokens,
+			input.Context.TenantID,
+			input.Context.UserID,
+			a.config.AllowedTools,
+		)
+		toolSpan.End()
+
+		if err != nil {
+			span.RecordError(err)
+			span.SetStatus(codes.Error, "Tool execution failed")
+			return &AgentResult{
+				Output:    "",
+				Status:    "failed",
+				Error:     err.Error(),
+				LatencyMs: time.Since(start).Milliseconds(),
+			}, err
+		}
+
+		output = resp.Content
+		usage = &Usage{
+			PromptTokens:     resp.Usage.PromptTokens,
+			CompletionTokens: resp.Usage.CompletionTokens,
+			TotalTokens:      resp.Usage.TotalTokens,
+		}
+		modelID = resp.Model
+	} else {
+		// 调用 AI 模型
+		_, aiSpan := a.tracer.Start(ctx, "AI.ChatCompletion")
+		resp, err := a.modelClient.ChatCompletion(ctx, &ai.ChatCompletionRequest{
+			Messages:    messages,
+			Temperature: a.config.Temperature,
+			MaxTokens:   a.config.MaxTokens,
+		})
+		aiSpan.End()
+
+		if err != nil {
+			span.RecordError(err)
+			span.SetStatus(codes.Error, "AI call failed")
+			return &AgentResult{
+				Output:    "",
+				Status:    "failed",
+				Error:     err.Error(),
+				LatencyMs: time.Since(start).Milliseconds(),
+			}, err
+		}
+
+		output = resp.Content
+		usage = &Usage{
+			PromptTokens:     resp.Usage.PromptTokens,
+			CompletionTokens: resp.Usage.CompletionTokens,
+			TotalTokens:      resp.Usage.TotalTokens,
+		}
+		modelID = resp.Model
+	}
 
 	latency := time.Since(start).Milliseconds()
 
-	if err != nil {
-		span.RecordError(err)
-		span.SetStatus(codes.Error, "AI call failed")
-		return &AgentResult{
-			Output:    "",
-			Status:    "failed",
-			Error:     err.Error(),
-			LatencyMs: latency,
-		}, err
-	}
-
 	span.SetAttributes(
-		attribute.Int("prompt_tokens", resp.Usage.PromptTokens),
-		attribute.Int("completion_tokens", resp.Usage.CompletionTokens),
-		attribute.Int("total_tokens", resp.Usage.TotalTokens),
+		attribute.Int("prompt_tokens", usage.PromptTokens),
+		attribute.Int("completion_tokens", usage.CompletionTokens),
+		attribute.Int("total_tokens", usage.TotalTokens),
 		attribute.Int64("latency_ms", latency),
 	)
 
 	// 构建结果
 	result := &AgentResult{
-		Output: resp.Content,
-		Usage: &Usage{
-			PromptTokens:     resp.Usage.PromptTokens,
-			CompletionTokens: resp.Usage.CompletionTokens,
-			TotalTokens:      resp.Usage.TotalTokens,
-		},
-		Cost:      calculateCost(resp.Usage.PromptTokens, resp.Usage.CompletionTokens),
+		Output:    output,
+		Usage:     usage,
+		Cost:      calculateCost(usage.PromptTokens, usage.CompletionTokens),
 		LatencyMs: latency,
 		Status:    "success",
 		Metadata: map[string]any{
-			"model_id": resp.Model,
+			"model_id": modelID,
 		},
 	}
 

@@ -5,6 +5,8 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"fmt"
+	"strings"
 	"time"
 
 	"backend/internal/infra"
@@ -281,6 +283,7 @@ type RoleRepository interface {
 	Insert(ctx context.Context, r *Role) error
 	GetByID(ctx context.Context, id string) (*Role, error)
 	GetByName(ctx context.Context, name string) (*Role, error)
+	List(ctx context.Context) ([]*Role, error)
 	Update(ctx context.Context, r *Role) error
 	Delete(ctx context.Context, id string) error
 }
@@ -299,10 +302,12 @@ func (r *roleRepository) Insert(ctx context.Context, role *Role) error {
 		return err
 	}
 	const q = `
-		INSERT INTO roles (id, tenant_id, name, description, created_at, updated_at)
-		VALUES ($1, $2, $3, $4, $5, $6)
+		INSERT INTO roles (id, tenant_id, name, code, description, is_system, is_default, priority, created_at, updated_at)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
 	`
-	_, err = r.db.ExecContext(ctx, q, role.ID, tenantID, role.Name, role.Description, role.CreatedAt, role.UpdatedAt)
+	_, err = r.db.ExecContext(ctx, q,
+		role.ID, tenantID, role.Name, role.Code, role.Description, role.IsSystem, role.IsDefault, role.Priority, role.CreatedAt, role.UpdatedAt,
+	)
 	return err
 }
 
@@ -312,13 +317,13 @@ func (r *roleRepository) GetByID(ctx context.Context, id string) (*Role, error) 
 		return nil, err
 	}
 	const q = `
-		SELECT id, tenant_id, name, description, created_at, updated_at
+		SELECT id, tenant_id, name, code, description, is_system, is_default, priority, created_at, updated_at
 		FROM roles
 		WHERE tenant_id = $1 AND id = $2
 	`
 	row := r.db.QueryRowContext(ctx, q, tenantID, id)
 	var role Role
-	if err := row.Scan(&role.ID, &role.TenantID, &role.Name, &role.Description, &role.CreatedAt, &role.UpdatedAt); err != nil {
+	if err := row.Scan(&role.ID, &role.TenantID, &role.Name, &role.Code, &role.Description, &role.IsSystem, &role.IsDefault, &role.Priority, &role.CreatedAt, &role.UpdatedAt); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, ErrNotFound
 		}
@@ -333,19 +338,50 @@ func (r *roleRepository) GetByName(ctx context.Context, name string) (*Role, err
 		return nil, err
 	}
 	const q = `
-		SELECT id, tenant_id, name, description, created_at, updated_at
+		SELECT id, tenant_id, name, code, description, is_system, is_default, priority, created_at, updated_at
 		FROM roles
 		WHERE tenant_id = $1 AND name = $2
 	`
 	row := r.db.QueryRowContext(ctx, q, tenantID, name)
 	var role Role
-	if err := row.Scan(&role.ID, &role.TenantID, &role.Name, &role.Description, &role.CreatedAt, &role.UpdatedAt); err != nil {
+	if err := row.Scan(&role.ID, &role.TenantID, &role.Name, &role.Code, &role.Description, &role.IsSystem, &role.IsDefault, &role.Priority, &role.CreatedAt, &role.UpdatedAt); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, ErrNotFound
 		}
 		return nil, err
 	}
 	return &role, nil
+}
+
+func (r *roleRepository) List(ctx context.Context) ([]*Role, error) {
+	tenantID, err := tenantIDFromContext(ctx)
+	if err != nil {
+		return nil, err
+	}
+	const q = `
+		SELECT id, tenant_id, name, code, description, is_system, is_default, priority, created_at, updated_at
+		FROM roles
+		WHERE tenant_id = $1
+		ORDER BY priority DESC, created_at ASC
+	`
+	rows, err := r.db.QueryContext(ctx, q, tenantID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var roles []*Role
+	for rows.Next() {
+		var role Role
+		if err := rows.Scan(&role.ID, &role.TenantID, &role.Name, &role.Code, &role.Description, &role.IsSystem, &role.IsDefault, &role.Priority, &role.CreatedAt, &role.UpdatedAt); err != nil {
+			return nil, err
+		}
+		roles = append(roles, &role)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return roles, nil
 }
 
 func (r *roleRepository) Update(ctx context.Context, role *Role) error {
@@ -356,11 +392,15 @@ func (r *roleRepository) Update(ctx context.Context, role *Role) error {
 	const q = `
 		UPDATE roles
 		SET name = $1,
-			description = $2,
-			updated_at = $3
-		WHERE tenant_id = $4 AND id = $5
+			code = COALESCE($2, code),
+			description = $3,
+			is_system = $4,
+			is_default = $5,
+			priority = $6,
+			updated_at = $7
+		WHERE tenant_id = $8 AND id = $9
 	`
-	_, err = r.db.ExecContext(ctx, q, role.Name, role.Description, role.UpdatedAt, tenantID, role.ID)
+	_, err = r.db.ExecContext(ctx, q, role.Name, role.Code, role.Description, role.IsSystem, role.IsDefault, role.Priority, role.UpdatedAt, tenantID, role.ID)
 	return err
 }
 
@@ -397,7 +437,7 @@ func (r *permissionRepository) ListByTenant(ctx context.Context) ([]*Permission,
 		return nil, err
 	}
 	const q = `
-		SELECT id, tenant_id, resource, action
+		SELECT id, tenant_id, code, name, category, resource, action, COALESCE(description, '') AS description, created_at, updated_at
 		FROM permissions
 		WHERE tenant_id IS NULL OR tenant_id = $1
 	`
@@ -410,7 +450,7 @@ func (r *permissionRepository) ListByTenant(ctx context.Context) ([]*Permission,
 	var perms []*Permission
 	for rows.Next() {
 		var p Permission
-		if err := rows.Scan(&p.ID, &p.TenantID, &p.Resource, &p.Action); err != nil {
+		if err := rows.Scan(&p.ID, &p.TenantID, &p.Code, &p.Name, &p.Category, &p.Resource, &p.Action, &p.Description, &p.CreatedAt, &p.UpdatedAt); err != nil {
 			return nil, err
 		}
 		perms = append(perms, &p)
@@ -427,7 +467,7 @@ func (r *permissionRepository) GetPermissionsForUser(ctx context.Context, userID
 		return nil, err
 	}
 	const q = `
-		SELECT DISTINCT p.id, p.tenant_id, p.resource, p.action
+		SELECT DISTINCT p.id, p.tenant_id, p.code, p.name, p.category, p.resource, p.action, COALESCE(p.description, '') AS description, p.created_at, p.updated_at
 		FROM permissions p
 		JOIN role_permissions rp ON p.id = rp.permission_id
 		JOIN user_roles ur ON rp.role_id = ur.role_id
@@ -442,7 +482,7 @@ func (r *permissionRepository) GetPermissionsForUser(ctx context.Context, userID
 	var perms []*Permission
 	for rows.Next() {
 		var p Permission
-		if err := rows.Scan(&p.ID, &p.TenantID, &p.Resource, &p.Action); err != nil {
+		if err := rows.Scan(&p.ID, &p.TenantID, &p.Code, &p.Name, &p.Category, &p.Resource, &p.Action, &p.Description, &p.CreatedAt, &p.UpdatedAt); err != nil {
 			return nil, err
 		}
 		perms = append(perms, &p)
@@ -457,6 +497,8 @@ func (r *permissionRepository) GetPermissionsForUser(ctx context.Context, userID
 type UserRoleRepository interface {
 	AssignRoleToUser(ctx context.Context, userID, roleID string) error
 	RemoveRolesByRole(ctx context.Context, roleID string) error
+	ReplaceUserRoles(ctx context.Context, userID string, roleIDs []string) error
+	ListRoleIDsByUser(ctx context.Context, userID string) ([]string, error)
 }
 
 type userRoleRepository struct {
@@ -494,9 +536,67 @@ func (r *userRoleRepository) RemoveRolesByRole(ctx context.Context, roleID strin
 	return err
 }
 
+func (r *userRoleRepository) ReplaceUserRoles(ctx context.Context, userID string, roleIDs []string) error {
+	tenantID, err := tenantIDFromContext(ctx)
+	if err != nil {
+		return err
+	}
+	const delQ = `
+		DELETE FROM user_roles
+		WHERE tenant_id = $1 AND user_id = $2
+	`
+	if _, err := r.db.ExecContext(ctx, delQ, tenantID, userID); err != nil {
+		return err
+	}
+	if len(roleIDs) == 0 {
+		return nil
+	}
+	const insQ = `
+		INSERT INTO user_roles (id, tenant_id, user_id, role_id)
+		VALUES ($1, $2, $3, $4)
+	`
+	for _, roleID := range roleIDs {
+		rowID := userID + ":" + roleID
+		if _, err := r.db.ExecContext(ctx, insQ, rowID, tenantID, userID, roleID); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (r *userRoleRepository) ListRoleIDsByUser(ctx context.Context, userID string) ([]string, error) {
+	tenantID, err := tenantIDFromContext(ctx)
+	if err != nil {
+		return nil, err
+	}
+	const q = `
+		SELECT role_id
+		FROM user_roles
+		WHERE tenant_id = $1 AND user_id = $2
+	`
+	rows, err := r.db.QueryContext(ctx, q, tenantID, userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var result []string
+	for rows.Next() {
+		var roleID string
+		if err := rows.Scan(&roleID); err != nil {
+			return nil, err
+		}
+		result = append(result, roleID)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return result, nil
+}
+
 // RolePermissionRepository manages role-permission links.
 type RolePermissionRepository interface {
 	ReplaceRolePermissions(ctx context.Context, roleID string, permissionIDs []string) error
+	ListPermissionIDsByRoles(ctx context.Context, roleIDs []string) (map[string][]string, error)
 }
 
 type rolePermissionRepository struct {
@@ -537,6 +637,45 @@ func (r *rolePermissionRepository) ReplaceRolePermissions(ctx context.Context, r
 		}
 	}
 	return nil
+}
+
+func (r *rolePermissionRepository) ListPermissionIDsByRoles(ctx context.Context, roleIDs []string) (map[string][]string, error) {
+	tenantID, err := tenantIDFromContext(ctx)
+	if err != nil {
+		return nil, err
+	}
+	result := make(map[string][]string)
+	if len(roleIDs) == 0 {
+		return result, nil
+	}
+	plhdr := make([]string, 0, len(roleIDs))
+	args := make([]any, 0, len(roleIDs)+1)
+	args = append(args, tenantID)
+	for i, id := range roleIDs {
+		plhdr = append(plhdr, fmt.Sprintf("$%d", i+2))
+		args = append(args, id)
+	}
+	query := fmt.Sprintf(`
+		SELECT role_id, permission_id
+		FROM role_permissions
+		WHERE tenant_id = $1 AND role_id IN (%s)
+	`, strings.Join(plhdr, ","))
+	rows, err := r.db.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var roleID, permID string
+		if err := rows.Scan(&roleID, &permID); err != nil {
+			return nil, err
+		}
+		result[roleID] = append(result[roleID], permID)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return result, nil
 }
 
 // TenantConfigRepository manages TenantConfig persistence.
@@ -628,4 +767,177 @@ func (r *tenantConfigRepository) Upsert(ctx context.Context, cfg *TenantConfig) 
 		approvalSettingsJSON,
 	)
 	return err
+}
+
+
+// ============================================================================
+// TenantQuotaRepository - 租户配额仓储
+// ============================================================================
+
+// TenantQuotaRepository persists TenantQuota records.
+type TenantQuotaRepository interface {
+	Insert(ctx context.Context, q *TenantQuota) error
+	Update(ctx context.Context, q *TenantQuota) error
+	FindByTenantID(ctx context.Context, tenantID string) (*TenantQuota, error)
+	FindByTenantIDForUpdate(ctx context.Context, db interface{}, tenantID string) (*TenantQuota, error)
+}
+
+type tenantQuotaRepository struct {
+	tenantAwareRepo
+}
+
+// NewTenantQuotaRepository constructs a TenantQuotaRepository backed by the given DB.
+func NewTenantQuotaRepository(db infra.DB) TenantQuotaRepository {
+	return &tenantQuotaRepository{tenantAwareRepo{db: db}}
+}
+
+func (r *tenantQuotaRepository) Insert(ctx context.Context, q *TenantQuota) error {
+	const query = `
+		INSERT INTO tenant_quotas (
+			id, tenant_id, 
+			max_users, used_users,
+			max_storage_mb, used_storage_mb,
+			max_workflows, used_workflows,
+			max_knowledge_bases, used_knowledge_bases,
+			max_tokens_per_month, used_tokens_this_month,
+			max_api_calls_per_day, used_api_calls_today,
+			token_quota_reset_at, api_quota_reset_at,
+			created_at, updated_at
+		) VALUES (
+			$1, $2, 
+			$3, $4, 
+			$5, $6, 
+			$7, $8, 
+			$9, $10, 
+			$11, $12, 
+			$13, $14, 
+			$15, $16, 
+			$17, $18
+		)
+	`
+	_, err := r.db.ExecContext(ctx, query,
+		q.ID, q.TenantID,
+		q.MaxUsers, q.UsedUsers,
+		q.MaxStorageMB, q.UsedStorageMB,
+		q.MaxWorkflows, q.UsedWorkflows,
+		q.MaxKnowledgeBases, q.UsedKnowledgeBases,
+		q.MaxTokensPerMonth, q.UsedTokensThisMonth,
+		q.MaxAPICallsPerDay, q.UsedAPICallsToday,
+		q.TokenQuotaResetAt, q.APIQuotaResetAt,
+		q.CreatedAt, q.UpdatedAt,
+	)
+	return err
+}
+
+func (r *tenantQuotaRepository) Update(ctx context.Context, q *TenantQuota) error {
+	const query = `
+		UPDATE tenant_quotas SET
+			max_users = $1, used_users = $2,
+			max_storage_mb = $3, used_storage_mb = $4,
+			max_workflows = $5, used_workflows = $6,
+			max_knowledge_bases = $7, used_knowledge_bases = $8,
+			max_tokens_per_month = $9, used_tokens_this_month = $10,
+			max_api_calls_per_day = $11, used_api_calls_today = $12,
+			token_quota_reset_at = $13, api_quota_reset_at = $14,
+			updated_at = $15
+		WHERE tenant_id = $16
+	`
+	_, err := r.db.ExecContext(ctx, query,
+		q.MaxUsers, q.UsedUsers,
+		q.MaxStorageMB, q.UsedStorageMB,
+		q.MaxWorkflows, q.UsedWorkflows,
+		q.MaxKnowledgeBases, q.UsedKnowledgeBases,
+		q.MaxTokensPerMonth, q.UsedTokensThisMonth,
+		q.MaxAPICallsPerDay, q.UsedAPICallsToday,
+		q.TokenQuotaResetAt, q.APIQuotaResetAt,
+		q.UpdatedAt,
+		q.TenantID,
+	)
+	return err
+}
+
+func (r *tenantQuotaRepository) FindByTenantID(ctx context.Context, tenantID string) (*TenantQuota, error) {
+	const query = `
+		SELECT 
+			id, tenant_id,
+			max_users, used_users,
+			max_storage_mb, used_storage_mb,
+			max_workflows, used_workflows,
+			max_knowledge_bases, used_knowledge_bases,
+			max_tokens_per_month, used_tokens_this_month,
+			max_api_calls_per_day, used_api_calls_today,
+			token_quota_reset_at, api_quota_reset_at,
+			created_at, updated_at
+		FROM tenant_quotas
+		WHERE tenant_id = $1
+	`
+	row := r.db.QueryRowContext(ctx, query, tenantID)
+	
+	var q TenantQuota
+	err := row.Scan(
+		&q.ID, &q.TenantID,
+		&q.MaxUsers, &q.UsedUsers,
+		&q.MaxStorageMB, &q.UsedStorageMB,
+		&q.MaxWorkflows, &q.UsedWorkflows,
+		&q.MaxKnowledgeBases, &q.UsedKnowledgeBases,
+		&q.MaxTokensPerMonth, &q.UsedTokensThisMonth,
+		&q.MaxAPICallsPerDay, &q.UsedAPICallsToday,
+		&q.TokenQuotaResetAt, &q.APIQuotaResetAt,
+		&q.CreatedAt, &q.UpdatedAt,
+	)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, ErrNotFound
+		}
+		return nil, err
+	}
+	return &q, nil
+}
+
+// FindByTenantIDForUpdate 使用悲观锁（FOR UPDATE）查询租户配额
+// db 参数可以是 infra.DB 或者事务对象
+func (r *tenantQuotaRepository) FindByTenantIDForUpdate(ctx context.Context, db interface{}, tenantID string) (*TenantQuota, error) {
+	const query = `
+		SELECT 
+			id, tenant_id,
+			max_users, used_users,
+			max_storage_mb, used_storage_mb,
+			max_workflows, used_workflows,
+			max_knowledge_bases, used_knowledge_bases,
+			max_tokens_per_month, used_tokens_this_month,
+			max_api_calls_per_day, used_api_calls_today,
+			token_quota_reset_at, api_quota_reset_at,
+			created_at, updated_at
+		FROM tenant_quotas
+		WHERE tenant_id = $1
+		FOR UPDATE
+	`
+	
+	// 类型断言以支持事务
+	var row interface{ Scan(dest ...interface{}) error }
+	if executor, ok := db.(interface{ QueryRowContext(context.Context, string, ...interface{}) interface{ Scan(dest ...interface{}) error } }); ok {
+		row = executor.QueryRowContext(ctx, query, tenantID)
+	} else {
+		row = r.db.QueryRowContext(ctx, query, tenantID)
+	}
+	
+	var q TenantQuota
+	err := row.Scan(
+		&q.ID, &q.TenantID,
+		&q.MaxUsers, &q.UsedUsers,
+		&q.MaxStorageMB, &q.UsedStorageMB,
+		&q.MaxWorkflows, &q.UsedWorkflows,
+		&q.MaxKnowledgeBases, &q.UsedKnowledgeBases,
+		&q.MaxTokensPerMonth, &q.UsedTokensThisMonth,
+		&q.MaxAPICallsPerDay, &q.UsedAPICallsToday,
+		&q.TokenQuotaResetAt, &q.APIQuotaResetAt,
+		&q.CreatedAt, &q.UpdatedAt,
+	)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, ErrNotFound
+		}
+		return nil, err
+	}
+	return &q, nil
 }
