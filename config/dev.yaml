@@ -55,9 +55,19 @@ rag:
 workspace:
   base_path: ./workspace
   enable_disk_store: false
-  max_file_size: 10485760  # 10MB
+  max_file_size: 10485760 # 10MB
   artifact:
     naming_pattern: "{agent}-{type}-{timestamp}-{seq}"
     organize_by_agent: true
     organize_by_session: false
-    retention_days: 0  # 0 表示永久保留
+    retention_days: 0 # 0 表示永久保留
+
+# 缓存配置
+cache:
+  # 硬盘缓存 (L3层)
+  disk:
+    enabled: true
+    db_path: ./data/cache/llm_cache.db
+    max_size_gb: 10
+    ttl: 720h # 30天
+    cleanup_interval: 30m

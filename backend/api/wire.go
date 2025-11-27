@@ -28,6 +28,7 @@ import (
 	"backend/internal/ai"
 	auditpkg "backend/internal/audit"
 	"backend/internal/auth"
+	"backend/internal/cache"
 	"backend/internal/command"
 	"backend/internal/config"
 	"backend/internal/infra/queue"
@@ -97,6 +98,9 @@ type AppContainer struct {
 	AgentRegistry *runtime.Registry
 	AsyncClient   *runtime.AsyncClient
 	ClientFactory *ai.ClientFactory
+	
+	// 缓存
+	DiskCache *cache.DiskCache // L3硬盘缓存
 
 	// 工具相关
 	ToolRegistry *tools.ToolRegistry
@@ -370,8 +374,35 @@ func (c *AppContainer) initCoreServices(db *gorm.DB, cfg *config.Config) error {
 }
 
 func (c *AppContainer) initAgentRuntime(db *gorm.DB, cfg *config.Config) error {
+	// 初始化硬盘缓存(L3)
+	var diskCache *cache.DiskCache
+	if cfg.Cache.Disk.Enabled {
+		ttl, err := time.ParseDuration(cfg.Cache.Disk.TTL)
+		if err != nil {
+			logger.Warn("解析缓存TTL失败，使用默认值720h", zap.Error(err))
+			ttl = 720 * time.Hour
+		}
+		
+		diskCache, err = cache.NewDiskCache(
+			cfg.Cache.Disk.DBPath,
+			ttl,
+			cfg.Cache.Disk.MaxSizeGB,
+		)
+		if err != nil {
+			logger.Error("初始化硬盘缓存失败", zap.Error(err))
+			// 不阻断启动，继续使用nil diskCache
+		} else {
+			logger.Info("硬盘缓存初始化成功",
+				zap.String("db_path", cfg.Cache.Disk.DBPath),
+				zap.Int("max_size_gb", cfg.Cache.Disk.MaxSizeGB),
+				zap.Duration("ttl", ttl),
+			)
+		}
+	}
+	c.DiskCache = diskCache
+	
 	dbLogger := ai.NewDBLogger(db)
-	c.ClientFactory = ai.NewClientFactory(db, dbLogger)
+	c.ClientFactory = ai.NewClientFactory(db, dbLogger, diskCache)
 
 	c.AgentRegistry = runtime.NewRegistry(db, c.ClientFactory)
 

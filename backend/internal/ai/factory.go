@@ -13,6 +13,7 @@ import (
 	"backend/internal/ai/google"
 	"backend/internal/ai/ollama"
 	"backend/internal/ai/openai"
+	"backend/internal/cache"
 	modelspkg "backend/internal/models"
 	"backend/internal/security"
 
@@ -21,18 +22,20 @@ import (
 
 // ClientFactory 模型客户端工厂
 type ClientFactory struct {
-	db      *gorm.DB
-	clients map[string]ModelClient // 客户端缓存
-	mu      sync.RWMutex
-	logger  ModelCallLogger
+	db        *gorm.DB
+	clients   map[string]ModelClient // 客户端缓存
+	diskCache *cache.DiskCache       // L3硬盘缓存
+	mu        sync.RWMutex
+	logger    ModelCallLogger
 }
 
 // NewClientFactory 创建客户端工厂
-func NewClientFactory(db *gorm.DB, logger ModelCallLogger) *ClientFactory {
+func NewClientFactory(db *gorm.DB, logger ModelCallLogger, diskCache *cache.DiskCache) *ClientFactory {
 	return &ClientFactory{
-		db:      db,
-		clients: make(map[string]ModelClient),
-		logger:  logger,
+		db:        db,
+		clients:   make(map[string]ModelClient),
+		diskCache: diskCache,
+		logger:    logger,
 	}
 }
 

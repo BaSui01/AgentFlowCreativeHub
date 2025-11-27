@@ -16,6 +16,7 @@ type Config struct {
 	AI        AIConfig        `mapstructure:"ai"`
 	RAG       RagConfig       `mapstructure:"rag"`
 	Workspace WorkspaceConfig `mapstructure:"workspace"`
+	Cache     CacheConfig     `mapstructure:"cache"` // 新增:缓存配置
 }
 
 // WorkspaceConfig 工作区文件系统配置
@@ -110,6 +111,20 @@ type AnthropicConfig struct {
 	APIKey     string `mapstructure:"api_key"`
 	BaseURL    string `mapstructure:"base_url"`
 	MaxRetries int    `mapstructure:"max_retries"`
+}
+
+// CacheConfig 缓存配置
+type CacheConfig struct {
+	Disk DiskCacheConfig `mapstructure:"disk"` // 硬盘缓存(L3层)
+}
+
+// DiskCacheConfig 硬盘缓存配置
+type DiskCacheConfig struct {
+	Enabled         bool   `mapstructure:"enabled"`          // 是否启用硬盘缓存
+	DBPath          string `mapstructure:"db_path"`          // 数据库文件路径
+	MaxSizeGB       int    `mapstructure:"max_size_gb"`      // 最大缓存大小(GB)
+	TTL             string `mapstructure:"ttl"`              // 缓存过期时间(如"720h"表示30天)
+	CleanupInterval string `mapstructure:"cleanup_interval"` // 清理间隔(如"30m")
 }
 
 var globalConfig *Config
