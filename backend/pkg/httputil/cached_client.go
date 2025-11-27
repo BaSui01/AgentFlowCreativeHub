@@ -20,6 +20,12 @@ type CachedClient struct {
 	cacheTTL    time.Duration
 	shouldCache func(*http.Request, *http.Response) bool // 缓存条件判断
 	mu          sync.RWMutex
+	
+	// 统计指标
+	totalRequests int64 // 总请求数
+	cacheHits     int64 // 缓存命中数
+	cacheMisses   int64 // 缓存未命中数
+	statsMu       sync.RWMutex // 统计指标的锁
 }
 
 // CachedClientOption 缓存客户端配置选项
@@ -102,13 +108,26 @@ func (cc *CachedClient) setToMemCache(key string, data []byte) {
 
 // Get 发送GET请求（带缓存）
 func (cc *CachedClient) Get(ctx context.Context, url string) (*http.Response, error) {
+	// 增加总请求计数
+	cc.statsMu.Lock()
+	cc.totalRequests++
+	cc.statsMu.Unlock()
+	
 	cacheKey := cc.generateCacheKey("GET", url, nil)
 
 	// 检查内存缓存
 	if data, ok := cc.getFromMemCache(cacheKey); ok {
-		// 模拟http.Response
+		// 缓存命中
+		cc.statsMu.Lock()
+		cc.cacheHits++
+		cc.statsMu.Unlock()
 		return cc.buildResponseFromCache(data), nil
 	}
+	
+	// 缓存未命中
+	cc.statsMu.Lock()
+	cc.cacheMisses++
+	cc.statsMu.Unlock()
 
 	// 缓存未命中，执行实际请求
 	resp, err := cc.client.Get(ctx, url)
@@ -136,12 +155,26 @@ func (cc *CachedClient) Get(ctx context.Context, url string) (*http.Response, er
 
 // GetJSON 发送GET请求并解析JSON响应（带缓存）
 func (cc *CachedClient) GetJSON(ctx context.Context, url string, result interface{}) error {
+	// 增加总请求计数
+	cc.statsMu.Lock()
+	cc.totalRequests++
+	cc.statsMu.Unlock()
+	
 	cacheKey := cc.generateCacheKey("GET", url, nil)
 
 	// 检查内存缓存
 	if data, ok := cc.getFromMemCache(cacheKey); ok {
+		// 缓存命中
+		cc.statsMu.Lock()
+		cc.cacheHits++
+		cc.statsMu.Unlock()
 		return json.Unmarshal(data, result)
 	}
+	
+	// 缓存未命中
+	cc.statsMu.Lock()
+	cc.cacheMisses++
+	cc.statsMu.Unlock()
 
 	// 缓存未命中，执行实际请求
 	resp, err := cc.client.Get(ctx, url)
@@ -216,6 +249,37 @@ func (cc *CachedClient) buildResponseFromCache(data []byte) *http.Response {
 // ClearMemCache 清空内存缓存
 func (cc *CachedClient) ClearMemCache() {
 	cc.memCache = &sync.Map{}
+}
+
+// GetStats 获取缓存统计信息
+func (cc *CachedClient) GetStats() map[string]interface{} {
+	cc.statsMu.RLock()
+	totalReqs := cc.totalRequests
+	cacheHits := cc.cacheHits
+	cacheMisses := cc.cacheMisses
+	cc.statsMu.RUnlock()
+
+	// 计算缓存命中率
+	var hitRate float64
+	if totalReqs > 0 {
+		hitRate = float64(cacheHits) / float64(totalReqs) * 100
+	}
+
+	// 计算内存缓存大小
+	cacheSize := 0
+	cc.memCache.Range(func(key, value interface{}) bool {
+		cacheSize++
+		return true
+	})
+
+	return map[string]interface{}{
+		"total_requests":   totalReqs,
+		"cache_hits":       cacheHits,
+		"cache_misses":     cacheMisses,
+		"hit_rate_percent": hitRate,
+		"cache_entries":    cacheSize,
+		"cache_ttl":        cc.cacheTTL.String(),
+	}
 }
 
 // Close 关闭客户端

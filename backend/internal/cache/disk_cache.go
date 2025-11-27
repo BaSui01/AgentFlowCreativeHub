@@ -8,6 +8,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"sync"
 	"time"
 
 	_ "modernc.org/sqlite"
@@ -15,12 +16,18 @@ import (
 
 // DiskCache 硬盘缓存管理器
 type DiskCache struct {
-	db      *sql.DB
-	dbPath  string
-	ttl     time.Duration
-	maxSize int64 // 最大缓存大小 (字节)
+	db           *sql.DB
+	dbPath       string
+	ttl          time.Duration
+	maxSize      int64 // 最大缓存大小（GB）
+	mu           sync.RWMutex
+	
+	// 统计指标
+	totalRequests int64 // 总请求数
+	cacheHits     int64 // 缓存命中数
+	cacheMisses   int64 // 缓存未命中数
+	statsMu       sync.RWMutex // 统计指标的锁
 }
-
 // CacheEntry 缓存条目
 type CacheEntry struct {
 	CacheKey       string          `json:"cache_key"`
@@ -135,6 +142,11 @@ func GenerateCacheKey(model, prompt string) string {
 
 // Get 读取缓存
 func (c *DiskCache) Get(ctx context.Context, key string) (*CacheEntry, error) {
+	// 增加总请求计数
+	c.statsMu.Lock()
+	c.totalRequests++
+	c.statsMu.Unlock()
+	
 	query := `
 		SELECT cache_key, model, prompt_hash, response, tokens_used, cost_usd,
 		       hit_count, created_at, last_accessed_at, expires_at, metadata
@@ -161,11 +173,20 @@ func (c *DiskCache) Get(ctx context.Context, key string) (*CacheEntry, error) {
 	)
 
 	if err == sql.ErrNoRows {
-		return nil, nil // 缓存未命中
+		// 缓存未命中，增加计数
+		c.statsMu.Lock()
+		c.cacheMisses++
+		c.statsMu.Unlock()
+		return nil, nil
 	}
 	if err != nil {
 		return nil, fmt.Errorf("查询缓存失败: %w", err)
 	}
+
+	// 缓存命中，增加计数
+	c.statsMu.Lock()
+	c.cacheHits++
+	c.statsMu.Unlock()
 
 	if expiresAt.Valid {
 		entry.ExpiresAt = &expiresAt.Time
@@ -360,11 +381,30 @@ func (c *DiskCache) GetStats(ctx context.Context) (map[string]any, error) {
 		return nil, fmt.Errorf("获取统计数据失败: %w", err)
 	}
 
+	// 获取实时统计指标
+	c.statsMu.RLock()
+	totalReqs := c.totalRequests
+	cacheHits := c.cacheHits
+	cacheMisses := c.cacheMisses
+	c.statsMu.RUnlock()
+
+	// 计算缓存命中率
+	var hitRate float64
+	if totalReqs > 0 {
+		hitRate = float64(cacheHits) / float64(totalReqs) * 100
+	}
+
 	result := map[string]any{
-		"total_entries": stats.TotalEntries,
-		"total_hits":    stats.TotalHits,
-		"total_size_mb": float64(stats.TotalSizeKB) / 1024,
-		"avg_hit_count": stats.AvgHitCount,
+		"total_entries":     stats.TotalEntries,
+		"total_hits":        stats.TotalHits,
+		"total_size_mb":     float64(stats.TotalSizeKB) / 1024,
+		"avg_hit_count":     stats.AvgHitCount,
+		
+		// 新增性能指标
+		"total_requests":    totalReqs,
+		"cache_hits":        cacheHits,
+		"cache_misses":      cacheMisses,
+		"hit_rate_percent":  hitRate,
 	}
 
 	if stats.OldestEntry.Valid && stats.OldestEntry.String != "" {
