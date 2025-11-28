@@ -2,10 +2,16 @@ package workspace
 
 import (
 	"context"
+	"crypto/sha256"
 	"database/sql"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
+	"mime"
+	"os"
+	"path/filepath"
 	"sort"
 	"strings"
 	"sync"
@@ -1974,4 +1980,655 @@ func (s *Service) ensureFolderByPath(ctx context.Context, tx *gorm.DB, tenantID,
 		return nil, err
 	}
 	return &node, nil
+}
+
+// ============================================
+// 文件上传下载管理
+// ============================================
+
+const (
+	UploadStatusPending   = "pending"
+	UploadStatusUploading = "uploading"
+	UploadStatusCompleted = "completed"
+	UploadStatusFailed    = "failed"
+)
+
+const (
+	DefaultChunkSize  = 5 * 1024 * 1024 // 5MB
+	MaxFileSize       = 500 * 1024 * 1024 // 500MB
+	DefaultUploadPath = "uploads"
+)
+
+// UploadFileRequest 文件上传请求
+type UploadFileRequest struct {
+	TenantID     string
+	FileName     string
+	MimeType     string
+	FileSize     int64
+	ParentID     *string
+	UserID       string
+	StoragePath  string
+}
+
+// UploadChunkRequest 分片上传请求
+type UploadChunkRequest struct {
+	TenantID   string
+	UploadID   string
+	ChunkIndex int
+	ChunkData  io.Reader
+	ChunkSize  int64
+	UserID     string
+}
+
+// InitiateUploadRequest 初始化分片上传
+type InitiateUploadRequest struct {
+	TenantID   string
+	FileName   string
+	MimeType   string
+	FileSize   int64
+	ChunkSize  int64
+	ParentID   *string
+	UserID     string
+}
+
+// InitiateUploadResponse 初始化上传响应
+type InitiateUploadResponse struct {
+	UploadID    string   `json:"uploadId"`
+	ChunkSize   int64    `json:"chunkSize"`
+	ChunkCount  int      `json:"chunkCount"`
+	StoragePath string   `json:"storagePath"`
+}
+
+// UploadedFile 上传完成的文件信息
+type UploadedFile struct {
+	Upload  *FileUpload    `json:"upload"`
+	Node    *WorkspaceNode `json:"node"`
+	File    *WorkspaceFile `json:"file"`
+}
+
+// FilePreview 文件预览信息
+type FilePreview struct {
+	NodeID      string `json:"nodeId"`
+	FileName    string `json:"fileName"`
+	MimeType    string `json:"mimeType"`
+	FileSize    int64  `json:"fileSize"`
+	PreviewType string `json:"previewType"`
+	Content     string `json:"content,omitempty"`
+	PreviewURL  string `json:"previewUrl,omitempty"`
+	CanPreview  bool   `json:"canPreview"`
+}
+
+// GetStoragePath 获取存储路径
+func (s *Service) GetStoragePath() string {
+	return DefaultUploadPath
+}
+
+// InitiateUpload 初始化文件上传（支持大文件分片）
+func (s *Service) InitiateUpload(ctx context.Context, req *InitiateUploadRequest) (*InitiateUploadResponse, error) {
+	if strings.TrimSpace(req.FileName) == "" {
+		return nil, errors.New("文件名不能为空")
+	}
+	if req.FileSize <= 0 {
+		return nil, errors.New("文件大小无效")
+	}
+	if req.FileSize > MaxFileSize {
+		return nil, fmt.Errorf("文件大小超过限制(%dMB)", MaxFileSize/1024/1024)
+	}
+
+	chunkSize := req.ChunkSize
+	if chunkSize <= 0 {
+		chunkSize = DefaultChunkSize
+	}
+	chunkCount := int((req.FileSize + chunkSize - 1) / chunkSize)
+
+	// 生成存储路径
+	timestamp := time.Now().Format("20060102")
+	storagePath := filepath.Join(DefaultUploadPath, req.TenantID, timestamp, uuid.New().String())
+
+	// 确保目录存在
+	if err := os.MkdirAll(storagePath, 0755); err != nil {
+		return nil, fmt.Errorf("创建存储目录失败: %w", err)
+	}
+
+	// 创建上传记录
+	upload := &FileUpload{
+		TenantID:     req.TenantID,
+		FileName:     filepath.Base(req.FileName),
+		OriginalName: req.FileName,
+		MimeType:     req.MimeType,
+		FileSize:     req.FileSize,
+		StoragePath:  storagePath,
+		Status:       UploadStatusPending,
+		ChunkCount:   chunkCount,
+		CreatedBy:    req.UserID,
+	}
+
+	if err := s.db.WithContext(ctx).Create(upload).Error; err != nil {
+		return nil, err
+	}
+
+	return &InitiateUploadResponse{
+		UploadID:    upload.ID,
+		ChunkSize:   chunkSize,
+		ChunkCount:  chunkCount,
+		StoragePath: storagePath,
+	}, nil
+}
+
+// UploadChunk 上传文件分片
+func (s *Service) UploadChunk(ctx context.Context, req *UploadChunkRequest) error {
+	var upload FileUpload
+	if err := s.db.WithContext(ctx).
+		Where("id = ? AND tenant_id = ?", req.UploadID, req.TenantID).
+		First(&upload).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return errors.New("上传任务不存在")
+		}
+		return err
+	}
+
+	if upload.Status == UploadStatusCompleted {
+		return errors.New("上传已完成")
+	}
+
+	// 更新状态为上传中
+	if upload.Status == UploadStatusPending {
+		if err := s.db.WithContext(ctx).Model(&upload).Update("status", UploadStatusUploading).Error; err != nil {
+			return err
+		}
+	}
+
+	// 写入分片文件
+	chunkPath := filepath.Join(upload.StoragePath, fmt.Sprintf("chunk_%05d", req.ChunkIndex))
+	chunkFile, err := os.Create(chunkPath)
+	if err != nil {
+		return fmt.Errorf("创建分片文件失败: %w", err)
+	}
+	defer chunkFile.Close()
+
+	hasher := sha256.New()
+	written, err := io.Copy(io.MultiWriter(chunkFile, hasher), req.ChunkData)
+	if err != nil {
+		return fmt.Errorf("写入分片数据失败: %w", err)
+	}
+
+	// 记录分片信息
+	chunk := &FileChunk{
+		UploadID:    req.UploadID,
+		ChunkIndex:  req.ChunkIndex,
+		ChunkSize:   written,
+		StoragePath: chunkPath,
+		Hash:        hex.EncodeToString(hasher.Sum(nil)),
+	}
+	if err := s.db.WithContext(ctx).Create(chunk).Error; err != nil {
+		return err
+	}
+
+	return nil
+}
+
+// CompleteUpload 完成文件上传（合并分片）
+func (s *Service) CompleteUpload(ctx context.Context, tenantID, uploadID, userID string, parentID *string) (*UploadedFile, error) {
+	var upload FileUpload
+	if err := s.db.WithContext(ctx).
+		Where("id = ? AND tenant_id = ?", uploadID, tenantID).
+		First(&upload).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, errors.New("上传任务不存在")
+		}
+		return nil, err
+	}
+
+	if upload.Status == UploadStatusCompleted {
+		return nil, errors.New("上传已完成")
+	}
+
+	// 检查分片是否完整
+	var chunks []FileChunk
+	if err := s.db.WithContext(ctx).
+		Where("upload_id = ?", uploadID).
+		Order("chunk_index ASC").
+		Find(&chunks).Error; err != nil {
+		return nil, err
+	}
+
+	if len(chunks) != upload.ChunkCount {
+		return nil, fmt.Errorf("分片不完整: 期望 %d 个，实际 %d 个", upload.ChunkCount, len(chunks))
+	}
+
+	// 合并分片
+	finalPath := filepath.Join(upload.StoragePath, upload.FileName)
+	finalFile, err := os.Create(finalPath)
+	if err != nil {
+		return nil, fmt.Errorf("创建目标文件失败: %w", err)
+	}
+	defer finalFile.Close()
+
+	hasher := sha256.New()
+	for _, chunk := range chunks {
+		chunkFile, err := os.Open(chunk.StoragePath)
+		if err != nil {
+			return nil, fmt.Errorf("打开分片文件失败: %w", err)
+		}
+		if _, err := io.Copy(io.MultiWriter(finalFile, hasher), chunkFile); err != nil {
+			chunkFile.Close()
+			return nil, fmt.Errorf("合并分片失败: %w", err)
+		}
+		chunkFile.Close()
+		// 删除分片文件
+		os.Remove(chunk.StoragePath)
+	}
+
+	// 更新上传记录
+	now := time.Now().UTC()
+	upload.Status = UploadStatusCompleted
+	upload.Hash = hex.EncodeToString(hasher.Sum(nil))
+	upload.StoragePath = finalPath
+	upload.UploadedAt = &now
+
+	if err := s.db.WithContext(ctx).Save(&upload).Error; err != nil {
+		return nil, err
+	}
+
+	// 创建工作空间节点
+	result := &UploadedFile{Upload: &upload}
+	if err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		// 确定父目录
+		var parent *WorkspaceNode
+		parentPath := ""
+		if parentID != nil && *parentID != "" {
+			p, err := s.GetNode(ctx, tenantID, *parentID)
+			if err != nil {
+				return err
+			}
+			if p != nil && p.Type == "folder" {
+				parent = p
+				parentPath = p.NodePath
+			}
+		}
+
+		// 创建文件节点
+		slug := slugify(upload.FileName)
+		nodePath := slug
+		if parentPath != "" {
+			nodePath = parentPath + "/" + slug
+		}
+
+		node := &WorkspaceNode{
+			TenantID:  tenantID,
+			ParentID:  parentID,
+			Name:      upload.OriginalName,
+			Slug:      slug,
+			Type:      "file",
+			NodePath:  nodePath,
+			Category:  "upload",
+			CreatedBy: userID,
+			UpdatedBy: userID,
+		}
+		if parent != nil {
+			node.Category = parent.Category
+		}
+		if err := tx.Create(node).Error; err != nil {
+			return err
+		}
+
+		// 创建文件元数据
+		file := &WorkspaceFile{
+			TenantID:  tenantID,
+			NodeID:    node.ID,
+			Category:  "upload",
+			CreatedBy: userID,
+			UpdatedBy: userID,
+		}
+		if err := tx.Create(file).Error; err != nil {
+			return err
+		}
+
+		// 关联上传记录
+		if err := tx.Model(&upload).Update("node_id", node.ID).Error; err != nil {
+			return err
+		}
+
+		result.Node = node
+		result.File = file
+		return nil
+	}); err != nil {
+		return nil, err
+	}
+
+	return result, nil
+}
+
+// UploadSingleFile 单文件上传（小文件直接上传）
+func (s *Service) UploadSingleFile(ctx context.Context, req *UploadFileRequest, data io.Reader) (*UploadedFile, error) {
+	if strings.TrimSpace(req.FileName) == "" {
+		return nil, errors.New("文件名不能为空")
+	}
+	if req.FileSize > MaxFileSize {
+		return nil, fmt.Errorf("文件大小超过限制(%dMB)", MaxFileSize/1024/1024)
+	}
+
+	// 生成存储路径
+	timestamp := time.Now().Format("20060102")
+	storagePath := filepath.Join(DefaultUploadPath, req.TenantID, timestamp)
+	if err := os.MkdirAll(storagePath, 0755); err != nil {
+		return nil, fmt.Errorf("创建存储目录失败: %w", err)
+	}
+
+	finalPath := filepath.Join(storagePath, uuid.New().String()+"_"+filepath.Base(req.FileName))
+	file, err := os.Create(finalPath)
+	if err != nil {
+		return nil, fmt.Errorf("创建文件失败: %w", err)
+	}
+	defer file.Close()
+
+	hasher := sha256.New()
+	written, err := io.Copy(io.MultiWriter(file, hasher), data)
+	if err != nil {
+		return nil, fmt.Errorf("写入文件失败: %w", err)
+	}
+
+	now := time.Now().UTC()
+	upload := &FileUpload{
+		TenantID:     req.TenantID,
+		FileName:     filepath.Base(finalPath),
+		OriginalName: req.FileName,
+		MimeType:     req.MimeType,
+		FileSize:     written,
+		StoragePath:  finalPath,
+		Status:       UploadStatusCompleted,
+		Hash:         hex.EncodeToString(hasher.Sum(nil)),
+		UploadedAt:   &now,
+		CreatedBy:    req.UserID,
+	}
+
+	if err := s.db.WithContext(ctx).Create(upload).Error; err != nil {
+		return nil, err
+	}
+
+	// 创建工作空间节点
+	result := &UploadedFile{Upload: upload}
+	if err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var parent *WorkspaceNode
+		parentPath := ""
+		if req.ParentID != nil && *req.ParentID != "" {
+			p, err := s.GetNode(ctx, req.TenantID, *req.ParentID)
+			if err != nil {
+				return err
+			}
+			if p != nil && p.Type == "folder" {
+				parent = p
+				parentPath = p.NodePath
+			}
+		}
+
+		slug := slugify(req.FileName)
+		nodePath := slug
+		if parentPath != "" {
+			nodePath = parentPath + "/" + slug
+		}
+
+		node := &WorkspaceNode{
+			TenantID:  req.TenantID,
+			ParentID:  req.ParentID,
+			Name:      req.FileName,
+			Slug:      slug,
+			Type:      "file",
+			NodePath:  nodePath,
+			Category:  "upload",
+			CreatedBy: req.UserID,
+			UpdatedBy: req.UserID,
+		}
+		if parent != nil {
+			node.Category = parent.Category
+		}
+		if err := tx.Create(node).Error; err != nil {
+			return err
+		}
+
+		wsFile := &WorkspaceFile{
+			TenantID:  req.TenantID,
+			NodeID:    node.ID,
+			Category:  "upload",
+			CreatedBy: req.UserID,
+			UpdatedBy: req.UserID,
+		}
+		if err := tx.Create(wsFile).Error; err != nil {
+			return err
+		}
+
+		if err := tx.Model(upload).Update("node_id", node.ID).Error; err != nil {
+			return err
+		}
+
+		result.Node = node
+		result.File = wsFile
+		return nil
+	}); err != nil {
+		return nil, err
+	}
+
+	return result, nil
+}
+
+// GetFileForDownload 获取文件下载信息
+func (s *Service) GetFileForDownload(ctx context.Context, tenantID, nodeID string) (*FileUpload, error) {
+	var upload FileUpload
+	if err := s.db.WithContext(ctx).
+		Where("tenant_id = ? AND node_id = ? AND status = ?", tenantID, nodeID, UploadStatusCompleted).
+		First(&upload).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, errors.New("文件不存在或未完成上传")
+		}
+		return nil, err
+	}
+	return &upload, nil
+}
+
+// GetFileByUploadID 通过上传ID获取文件
+func (s *Service) GetFileByUploadID(ctx context.Context, tenantID, uploadID string) (*FileUpload, error) {
+	var upload FileUpload
+	if err := s.db.WithContext(ctx).
+		Where("id = ? AND tenant_id = ?", uploadID, tenantID).
+		First(&upload).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, errors.New("文件不存在")
+		}
+		return nil, err
+	}
+	return &upload, nil
+}
+
+// ============================================
+// 文件预览服务
+// ============================================
+
+// 可预览的 MIME 类型
+var previewableMimeTypes = map[string]string{
+	"text/plain":             "text",
+	"text/html":              "text",
+	"text/css":               "text",
+	"text/javascript":        "text",
+	"application/javascript": "text",
+	"application/json":       "text",
+	"text/markdown":          "markdown",
+	"text/x-markdown":        "markdown",
+	"image/jpeg":             "image",
+	"image/png":              "image",
+	"image/gif":              "image",
+	"image/webp":             "image",
+	"image/svg+xml":          "image",
+	"application/pdf":        "pdf",
+	"video/mp4":              "video",
+	"video/webm":             "video",
+	"audio/mpeg":             "audio",
+	"audio/wav":              "audio",
+}
+
+// GetFilePreview 获取文件预览信息
+func (s *Service) GetFilePreview(ctx context.Context, tenantID, nodeID string) (*FilePreview, error) {
+	node, err := s.GetNode(ctx, tenantID, nodeID)
+	if err != nil {
+		return nil, err
+	}
+	if node == nil {
+		return nil, errors.New("文件不存在")
+	}
+
+	preview := &FilePreview{
+		NodeID:   nodeID,
+		FileName: node.Name,
+	}
+
+	// 首先检查是否是上传的文件
+	var upload FileUpload
+	if err := s.db.WithContext(ctx).
+		Where("tenant_id = ? AND node_id = ?", tenantID, nodeID).
+		First(&upload).Error; err == nil {
+		preview.MimeType = upload.MimeType
+		preview.FileSize = upload.FileSize
+
+		if previewType, ok := previewableMimeTypes[upload.MimeType]; ok {
+			preview.PreviewType = previewType
+			preview.CanPreview = true
+
+			// 文本类型直接读取内容
+			if previewType == "text" || previewType == "markdown" {
+				content, err := s.readFileContent(upload.StoragePath, 1024*1024) // 最多读取1MB
+				if err == nil {
+					preview.Content = content
+				}
+			}
+		}
+		return preview, nil
+	}
+
+	// 检查是否是工作空间文件（数据库存储内容）
+	detail, err := s.GetFileDetail(ctx, tenantID, nodeID)
+	if err != nil {
+		return nil, err
+	}
+	if detail.Version != nil {
+		preview.MimeType = s.guessMimeType(node.Name)
+		preview.FileSize = int64(len(detail.Version.Content))
+		preview.PreviewType = "text"
+		preview.CanPreview = true
+		preview.Content = detail.Version.Content
+	}
+
+	return preview, nil
+}
+
+// readFileContent 读取文件内容
+func (s *Service) readFileContent(path string, maxSize int64) (string, error) {
+	file, err := os.Open(path)
+	if err != nil {
+		return "", err
+	}
+	defer file.Close()
+
+	limited := io.LimitReader(file, maxSize)
+	data, err := io.ReadAll(limited)
+	if err != nil {
+		return "", err
+	}
+	return string(data), nil
+}
+
+// guessMimeType 根据文件名猜测 MIME 类型
+func (s *Service) guessMimeType(filename string) string {
+	ext := filepath.Ext(filename)
+	if ext == "" {
+		return "application/octet-stream"
+	}
+	mimeType := mime.TypeByExtension(ext)
+	if mimeType == "" {
+		// 自定义扩展名映射
+		customTypes := map[string]string{
+			".md":    "text/markdown",
+			".go":    "text/x-go",
+			".py":    "text/x-python",
+			".js":    "application/javascript",
+			".ts":    "text/typescript",
+			".tsx":   "text/typescript-jsx",
+			".jsx":   "text/javascript-jsx",
+			".vue":   "text/x-vue",
+			".yaml":  "text/yaml",
+			".yml":   "text/yaml",
+			".toml":  "text/toml",
+			".sql":   "text/x-sql",
+			".sh":    "text/x-shellscript",
+			".bash":  "text/x-shellscript",
+			".zsh":   "text/x-shellscript",
+			".rs":    "text/x-rust",
+			".rb":    "text/x-ruby",
+			".java":  "text/x-java",
+			".kt":    "text/x-kotlin",
+			".swift": "text/x-swift",
+			".c":     "text/x-c",
+			".cpp":   "text/x-c++",
+			".h":     "text/x-c",
+			".hpp":   "text/x-c++",
+		}
+		if t, ok := customTypes[strings.ToLower(ext)]; ok {
+			return t
+		}
+		return "application/octet-stream"
+	}
+	return mimeType
+}
+
+// ListUploads 列出上传记录
+func (s *Service) ListUploads(ctx context.Context, tenantID string, limit, offset int) ([]FileUpload, int64, error) {
+	if limit <= 0 || limit > 100 {
+		limit = 20
+	}
+
+	var uploads []FileUpload
+	var total int64
+
+	baseQuery := s.db.WithContext(ctx).Model(&FileUpload{}).
+		Where("tenant_id = ?", tenantID)
+
+	if err := baseQuery.Count(&total).Error; err != nil {
+		return nil, 0, err
+	}
+
+	if err := baseQuery.Order("created_at DESC").
+		Limit(limit).Offset(offset).
+		Find(&uploads).Error; err != nil {
+		return nil, 0, err
+	}
+
+	return uploads, total, nil
+}
+
+// DeleteUpload 删除上传文件
+func (s *Service) DeleteUpload(ctx context.Context, tenantID, uploadID string) error {
+	var upload FileUpload
+	if err := s.db.WithContext(ctx).
+		Where("id = ? AND tenant_id = ?", uploadID, tenantID).
+		First(&upload).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return errors.New("文件不存在")
+		}
+		return err
+	}
+
+	// 删除物理文件
+	if upload.StoragePath != "" {
+		os.Remove(upload.StoragePath)
+		// 尝试删除空目录
+		os.Remove(filepath.Dir(upload.StoragePath))
+	}
+
+	// 删除分片记录
+	if err := s.db.WithContext(ctx).
+		Where("upload_id = ?", uploadID).
+		Delete(&FileChunk{}).Error; err != nil {
+		return err
+	}
+
+	// 删除上传记录
+	return s.db.WithContext(ctx).Delete(&upload).Error
 }

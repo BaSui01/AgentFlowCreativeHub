@@ -21,7 +21,9 @@ func NewParserRegistry() *ParserRegistry {
 	// Register default parsers
 	r.Register(NewTextParser())
 	r.Register(NewPDFParser())
-	// Future: r.Register(NewDocxParser())
+	r.Register(NewHTMLParser())
+	r.Register(NewDocxParser())
+	r.Register(NewDocParser())
 	
 	return r
 }

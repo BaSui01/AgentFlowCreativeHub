@@ -3,6 +3,7 @@ package models
 import (
 	"backend/pkg/types"
 	"context"
+	"fmt"
 	"time"
 
 	"github.com/google/uuid"
@@ -163,11 +164,51 @@ func (s *DocumentService) ListDocuments(ctx context.Context, kbID string, pagina
 
 	return docs, paginationResp, nil
 }
-
 // UpdateDocument 更新文档
-func (s *DocumentService) UpdateDocument(ctx context.Context, doc *Document) error {
-	return s.db.WithContext(ctx).Save(doc).Error
+func (s *DocumentService) UpdateDocument(ctx context.Context, tenantID, docID string, req *UpdateDocumentRequest) (*Document, error) {
+	// 获取现有文档
+	doc, err := s.GetDocument(ctx, docID)
+	if err != nil {
+		return nil, err
+	}
+	if doc == nil {
+		return nil, fmt.Errorf("document not found")
+	}
+	
+	// 验证租户权限
+	if doc.TenantID != tenantID {
+		return nil, fmt.Errorf("access denied")
+	}
+	
+	// 更新字段
+	if req.Title != "" {
+		doc.Title = req.Title
+	}
+	if req.Content != "" {
+		doc.Content = req.Content
+		doc.CharCount = len([]rune(req.Content))
+		doc.FileSize = int64(len(req.Content))
+	}
+	if req.Metadata != nil {
+		if doc.Metadata == nil {
+			doc.Metadata = make(map[string]interface{})
+		}
+		for k, v := range req.Metadata {
+			doc.Metadata[k] = v
+		}
+	}
+	if req.Status != "" {
+		doc.Status = req.Status
+	}
+	
+	// 保存更新
+	if err := s.db.WithContext(ctx).Save(doc).Error; err != nil {
+		return nil, err
+	}
+	
+	return doc, nil
 }
+
 
 // DeleteDocument 删除文档（同时删除所有分块）
 func (s *DocumentService) DeleteDocument(ctx context.Context, id string) error {

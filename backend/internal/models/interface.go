@@ -1,6 +1,9 @@
 package models
 
-import "context"
+import (
+	"context"
+	"time"
+)
 
 // ============================================================================
 // ModelService 接口定义
@@ -26,8 +29,8 @@ type ModelServiceInterface interface {
 	// SeedDefaultModels 初始化预置模型
 	SeedDefaultModels(ctx context.Context, tenantID string) error
 
-	// GetModelStats 获取模型使用统计
-	GetModelStats(ctx context.Context, tenantID, modelID string) (*ModelStats, error)
+	// GetModelCallStats 获取模型调用统计
+	GetModelCallStats(ctx context.Context, tenantID, modelID string, startTime, endTime time.Time) (map[string]any, error)
 }
 
 // ============================================================================
@@ -37,25 +40,16 @@ type ModelServiceInterface interface {
 // ModelCredentialServiceInterface 模型凭证管理服务接口
 type ModelCredentialServiceInterface interface {
 	// CreateCredential 创建模型凭证
-	CreateCredential(ctx context.Context, req *CreateCredentialRequest) (*ModelCredential, error)
+	CreateCredential(ctx context.Context, req *CreateModelCredentialRequest) (*ModelCredential, error)
 
 	// ListCredentials 查询租户的所有模型凭证
-	ListCredentials(ctx context.Context, tenantID, modelID string) ([]*ModelCredential, error)
-
-	// GetCredential 查询单个凭证
-	GetCredential(ctx context.Context, tenantID, credentialID string) (*ModelCredential, error)
-
-	// UpdateCredential 更新凭证
-	UpdateCredential(ctx context.Context, tenantID, credentialID string, req *UpdateCredentialRequest) (*ModelCredential, error)
+	ListCredentials(ctx context.Context, req *ListCredentialsRequest) ([]*ModelCredential, error)
 
 	// DeleteCredential 删除凭证
 	DeleteCredential(ctx context.Context, tenantID, credentialID string) error
 
-	// GetDefaultCredential 获取模型的默认凭证
-	GetDefaultCredential(ctx context.Context, tenantID, modelID string) (*ModelCredential, error)
-
-	// SetDefaultCredential 设置默认凭证
-	SetDefaultCredential(ctx context.Context, tenantID, modelID, credentialID string) error
+	// ResolveCredential 解密凭证
+	ResolveCredential(ctx context.Context, tenantID, credentialID string) (string, error)
 }
 
 // ============================================================================
@@ -64,14 +58,14 @@ type ModelCredentialServiceInterface interface {
 
 // ModelDiscoveryServiceInterface 模型发现服务接口
 type ModelDiscoveryServiceInterface interface {
-	// DiscoverModels 从提供商API自动发现并导入模型
-	DiscoverModels(ctx context.Context, tenantID, provider string) (int, error)
-
-	// DiscoverAllModels 发现所有支持的提供商的模型
-	DiscoverAllModels(ctx context.Context, tenantID string) (map[string]int, error)
-
 	// SyncModelsFromProvider 同步提供商的最新模型信息
-	SyncModelsFromProvider(ctx context.Context, tenantID, provider string) error
+	SyncModelsFromProvider(ctx context.Context, tenantID, provider string) (int, error)
+
+	// AutoDiscoverModels 自动发现所有支持的提供商的模型
+	AutoDiscoverModels(ctx context.Context, tenantID string) (map[string]int, error)
+
+	// StartSyncScheduler 启动定时同步调度器
+	StartSyncScheduler(ctx context.Context)
 }
 
 // ============================================================================
@@ -80,11 +74,14 @@ type ModelDiscoveryServiceInterface interface {
 
 // SessionServiceInterface 会话管理服务接口
 type SessionServiceInterface interface {
-	// CreateSession 创建会话
-	CreateSession(ctx context.Context, req *CreateSessionRequest) (*Session, error)
+	// CreateSession 创建会话（直接使用 Session 对象）
+	CreateSession(ctx context.Context, session *Session) error
 
 	// GetSession 查询会话
 	GetSession(ctx context.Context, tenantID, sessionID string) (*Session, error)
+
+	// GetSessionByRefreshToken 通过刷新令牌获取会话
+	GetSessionByRefreshToken(ctx context.Context, refreshToken string) (*Session, error)
 
 	// ListSessions 查询会话列表
 	ListSessions(ctx context.Context, tenantID, userID string, page, pageSize int) ([]*Session, int64, error)
@@ -94,6 +91,12 @@ type SessionServiceInterface interface {
 
 	// DeleteSession 删除会话
 	DeleteSession(ctx context.Context, tenantID, sessionID string) error
+
+	// RotateRefreshToken 更新刷新令牌
+	RotateRefreshToken(ctx context.Context, sessionID, refreshToken string, expiresAt time.Time) error
+
+	// RevokeSessionByRefreshToken 通过刷新令牌撤销会话
+	RevokeSessionByRefreshToken(ctx context.Context, refreshToken string) error
 
 	// AddMessage 添加消息到会话
 	AddMessage(ctx context.Context, sessionID string, message *Message) error

@@ -186,6 +186,10 @@ func (r *Registry) createAgent(ctx context.Context, config *agentpkg.AgentConfig
 		return NewAnalyzerAgent(agentConfig, modelClient, r.ragHelper, r.promptEngine, r.toolHelper), nil
 	case "researcher":
 		return NewResearcherAgent(agentConfig, modelClient, r.ragHelper, r.promptEngine, r.toolHelper), nil
+	case "plot":
+		return NewPlotAgent(agentConfig, modelClient, r.ragHelper, r.promptEngine, r.toolHelper), nil
+	case "world_builder":
+		return NewWorldBuilderAgent(agentConfig, modelClient, r.ragHelper, r.promptEngine, r.toolHelper), nil
 	default:
 		return nil, fmt.Errorf("不支持的 Agent 类型: %s", config.AgentType)
 	}
@@ -393,10 +397,14 @@ func (r *Registry) ClearCacheForAgent(tenantID, agentID string) {
 
 	delete(r.agents, cacheKey)
 }
-
 // GetContextManager 获取上下文管理器
 func (r *Registry) GetContextManager() *ContextManager {
 	return r.contextManager
+}
+
+// DB 获取数据库连接
+func (r *Registry) DB() *gorm.DB {
+	return r.db
 }
 
 // CompressHistory 压缩历史消息

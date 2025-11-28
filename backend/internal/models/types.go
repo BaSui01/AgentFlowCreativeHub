@@ -120,12 +120,17 @@ type UpdateKnowledgeBaseRequest struct {
 
 // CreateDocumentRequest 创建文档请求
 type CreateDocumentRequest struct {
-	TenantID       string            `json:"tenantId" binding:"required"`
-	KnowledgeBaseID string           `json:"knowledgeBaseId" binding:"required"`
-	Title          string            `json:"title" binding:"required"`
-	Content        string            `json:"content" binding:"required"`
-	Type           string            `json:"type"` // text, file
-	Metadata       map[string]string `json:"metadata"`
+	TenantID        string            `json:"tenantId" binding:"required"`
+	KnowledgeBaseID string            `json:"knowledgeBaseId" binding:"required"`
+	Title           string            `json:"title" binding:"required"`
+	Content         string            `json:"content"`
+	ContentType     string            `json:"contentType"`  // MIME type
+	Type            string            `json:"type"`         // text, file
+	Source          string            `json:"source"`       // 来源
+	SourceType      string            `json:"sourceType"`   // file, manual, url
+	FileSize        int64             `json:"fileSize"`     // 文件大小
+	CreatedBy       string            `json:"createdBy"`    // 创建者
+	Metadata        map[string]string `json:"metadata"`
 }
 
 // UpdateDocumentRequest 更新文档请求

@@ -293,3 +293,52 @@ func (sw *SessionWorkspace) BeforeUpdate(tx *gorm.DB) error {
 	sw.UpdatedAt = time.Now().UTC()
 	return nil
 }
+
+// FileUpload 文件上传记录
+type FileUpload struct {
+	ID           string     `gorm:"type:uuid;primaryKey" json:"id"`
+	TenantID     string     `gorm:"type:uuid;not null;index:idx_file_upload_tenant" json:"tenant_id"`
+	FileName     string     `gorm:"size:255;not null" json:"file_name"`
+	OriginalName string     `gorm:"size:255;not null" json:"original_name"`
+	MimeType     string     `gorm:"size:100" json:"mime_type"`
+	FileSize     int64      `gorm:"not null" json:"file_size"`
+	StoragePath  string     `gorm:"size:1024;not null" json:"storage_path"`
+	NodeID       *string    `gorm:"type:uuid;index:idx_file_upload_node" json:"node_id"`
+	Hash         string     `gorm:"size:64" json:"hash"`
+	Status       string     `gorm:"size:20;default:'completed'" json:"status"`
+	ChunkCount   int        `gorm:"default:0" json:"chunk_count"`
+	UploadedAt   *time.Time `json:"uploaded_at"`
+	CreatedBy    string     `gorm:"type:uuid" json:"created_by"`
+	CreatedAt    time.Time  `gorm:"not null" json:"created_at"`
+}
+
+func (f *FileUpload) BeforeCreate(tx *gorm.DB) error {
+	if f.ID == "" {
+		f.ID = uuid.New().String()
+	}
+	if f.CreatedAt.IsZero() {
+		f.CreatedAt = time.Now().UTC()
+	}
+	return nil
+}
+
+// FileChunk 分片上传记录（大文件）
+type FileChunk struct {
+	ID          string    `gorm:"type:uuid;primaryKey" json:"id"`
+	UploadID    string    `gorm:"type:uuid;not null;index:idx_file_chunk_upload" json:"upload_id"`
+	ChunkIndex  int       `gorm:"not null" json:"chunk_index"`
+	ChunkSize   int64     `gorm:"not null" json:"chunk_size"`
+	StoragePath string    `gorm:"size:1024;not null" json:"storage_path"`
+	Hash        string    `gorm:"size:64" json:"hash"`
+	CreatedAt   time.Time `gorm:"not null" json:"created_at"`
+}
+
+func (c *FileChunk) BeforeCreate(tx *gorm.DB) error {
+	if c.ID == "" {
+		c.ID = uuid.New().String()
+	}
+	if c.CreatedAt.IsZero() {
+		c.CreatedAt = time.Now().UTC()
+	}
+	return nil
+}
