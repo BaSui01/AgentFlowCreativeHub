@@ -40,7 +40,14 @@ func SetupRouter(db *gorm.DB, cfg *config.Config) (*gin.Engine, *worker.Server) 
 	router.GET("/health", HealthCheck(db))
 	router.GET("/ready", ReadinessCheck(db))
 	router.GET("/metrics", gin.WrapH(promhttp.Handler()))
-	router.GET("/swagger/*any", ginSwagger.WrapHandler(swaggerFiles.Handler))
+
+	// 非生产环境下启用 Swagger 文档
+	if cfg.Server.Mode != "release" {
+		router.GET("/swagger/*any", ginSwagger.WrapHandler(swaggerFiles.Handler))
+		logger.Info("Swagger 文档已启用", zap.String("path", "/swagger/index.html"))
+	} else {
+		logger.Info("生产模式：Swagger 文档已禁用")
+	}
 
 	// 注册 API 路由
 	RegisterRoutes(router, container, handlers)

@@ -26,11 +26,17 @@ func NewKBHandler(kbService *models.KnowledgeBaseService) *KBHandler {
 
 // CreateRequest 创建知识库请求
 type CreateRequest struct {
-	Name        string                 `json:"name" binding:"required,min=1,max=200"`
-	Description string                 `json:"description"`
-	Type        string                 `json:"type" binding:"required,oneof=document url api database"`
-	Config      map[string]interface{} `json:"config"`
-	Metadata    map[string]interface{} `json:"metadata"`
+	Name        string `json:"name" binding:"required,min=1,max=200"`
+	Description string `json:"description"`
+	Type        string `json:"type" binding:"required,oneof=document url api database"`
+	// 访问控制
+	AccessLevel string `json:"accessLevel"` // private, shared, public
+	Visibility  string `json:"visibility"`  // personal, team, tenant
+	// 配置
+	Config   map[string]interface{} `json:"config"`
+	Settings map[string]interface{} `json:"settings"`
+	// 元数据
+	Metadata map[string]interface{} `json:"metadata"`
 }
 
 // Create 创建知识库
@@ -60,7 +66,10 @@ func (h *KBHandler) Create(c *gin.Context) {
 		Description: req.Description,
 		Type:        req.Type,
 		Status:      "active",
+		AccessLevel: getDefaultString(req.AccessLevel, "private"),
+		Visibility:  getDefaultString(req.Visibility, "personal"),
 		Config:      req.Config,
+		Settings:    req.Settings,
 		Metadata:    req.Metadata,
 		CreatedBy:   userCtx.UserID,
 		UpdatedBy:   userCtx.UserID,
@@ -162,11 +171,17 @@ func (h *KBHandler) Get(c *gin.Context) {
 
 // UpdateRequest 更新知识库请求
 type UpdateRequest struct {
-	Name        string                 `json:"name" binding:"omitempty,min=1,max=200"`
-	Description string                 `json:"description"`
-	Status      string                 `json:"status" binding:"omitempty,oneof=active inactive"`
-	Config      map[string]interface{} `json:"config"`
-	Metadata    map[string]interface{} `json:"metadata"`
+	Name        string `json:"name" binding:"omitempty,min=1,max=200"`
+	Description string `json:"description"`
+	Status      string `json:"status" binding:"omitempty,oneof=active inactive"`
+	// 访问控制
+	AccessLevel string `json:"accessLevel"`
+	Visibility  string `json:"visibility"`
+	// 配置
+	Config   map[string]interface{} `json:"config"`
+	Settings map[string]interface{} `json:"settings"`
+	// 元数据
+	Metadata map[string]interface{} `json:"metadata"`
 }
 
 // Update 更新知识库
@@ -223,8 +238,17 @@ func (h *KBHandler) Update(c *gin.Context) {
 	if req.Status != "" {
 		kb.Status = req.Status
 	}
+	if req.AccessLevel != "" {
+		kb.AccessLevel = req.AccessLevel
+	}
+	if req.Visibility != "" {
+		kb.Visibility = req.Visibility
+	}
 	if req.Config != nil {
 		kb.Config = req.Config
+	}
+	if req.Settings != nil {
+		kb.Settings = req.Settings
 	}
 	if req.Metadata != nil {
 		kb.Metadata = req.Metadata
@@ -300,4 +324,12 @@ func parseInt(s string) int {
 		}
 	}
 	return n
+}
+
+// getDefaultString 获取默认字符串
+func getDefaultString(val, defaultVal string) string {
+	if val == "" {
+		return defaultVal
+	}
+	return val
 }

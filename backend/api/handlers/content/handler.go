@@ -32,7 +32,16 @@ func getUserContext(c *gin.Context) (tenantID, userID string, ok bool) {
 // ========== 公开作品 ==========
 
 // PublishWork 发布作品
-// POST /api/content/works
+// @Summary 发布作品
+// @Description 发布新的公开作品
+// @Tags Content
+// @Accept json
+// @Produce json
+// @Param request body content.PublishWorkRequest true "作品信息"
+// @Success 201 {object} map[string]any
+// @Failure 400 {object} map[string]string
+// @Failure 500 {object} map[string]string
+// @Router /api/content/works [post]
 func (h *Handler) PublishWork(c *gin.Context) {
 	var req content.PublishWorkRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -59,7 +68,15 @@ func (h *Handler) PublishWork(c *gin.Context) {
 }
 
 // GetWork 获取作品详情
-// GET /api/content/works/:id
+// @Summary 获取作品详情
+// @Description 根据ID获取作品详细信息
+// @Tags Content
+// @Produce json
+// @Param id path string true "作品ID"
+// @Success 200 {object} map[string]any
+// @Failure 404 {object} map[string]string
+// @Failure 500 {object} map[string]string
+// @Router /api/content/works/{id} [get]
 func (h *Handler) GetWork(c *gin.Context) {
 	workID := c.Param("id")
 	
@@ -80,7 +97,21 @@ func (h *Handler) GetWork(c *gin.Context) {
 }
 
 // ListWorks 获取作品列表
-// GET /api/content/works
+// @Summary 获取作品列表
+// @Description 获取作品列表，支持分页和筛选
+// @Tags Content
+// @Produce json
+// @Param page query int false "页码"
+// @Param pageSize query int false "每页数量"
+// @Param userId query string false "用户ID"
+// @Param categoryId query string false "分类ID"
+// @Param tag query string false "标签"
+// @Param status query string false "状态"
+// @Param keyword query string false "关键词"
+// @Param sortBy query string false "排序方式"
+// @Success 200 {object} map[string]any
+// @Failure 500 {object} map[string]string
+// @Router /api/content/works [get]
 func (h *Handler) ListWorks(c *gin.Context) {
 	tenantID, _, ok := getUserContext(c)
 	if !ok {
@@ -118,7 +149,17 @@ func (h *Handler) ListWorks(c *gin.Context) {
 }
 
 // UpdateWork 更新作品
-// PUT /api/content/works/:id
+// @Summary 更新作品
+// @Description 更新指定作品信息
+// @Tags Content
+// @Accept json
+// @Produce json
+// @Param id path string true "作品ID"
+// @Param request body content.UpdateWorkRequest true "更新信息"
+// @Success 200 {object} map[string]string
+// @Failure 400 {object} map[string]string
+// @Failure 500 {object} map[string]string
+// @Router /api/content/works/{id} [put]
 func (h *Handler) UpdateWork(c *gin.Context) {
 	workID := c.Param("id")
 	var req content.UpdateWorkRequest
@@ -136,7 +177,14 @@ func (h *Handler) UpdateWork(c *gin.Context) {
 }
 
 // DeleteWork 删除作品
-// DELETE /api/content/works/:id
+// @Summary 删除作品
+// @Description 删除指定作品
+// @Tags Content
+// @Produce json
+// @Param id path string true "作品ID"
+// @Success 200 {object} map[string]string
+// @Failure 500 {object} map[string]string
+// @Router /api/content/works/{id} [delete]
 func (h *Handler) DeleteWork(c *gin.Context) {
 	workID := c.Param("id")
 	
@@ -150,7 +198,17 @@ func (h *Handler) DeleteWork(c *gin.Context) {
 
 
 // ReviewWork 审核作品
-// POST /api/content/works/:id/review
+// @Summary 审核作品
+// @Description 审核指定作品（管理员）
+// @Tags Content
+// @Accept json
+// @Produce json
+// @Param id path string true "作品ID"
+// @Param request body content.ReviewWorkRequest true "审核信息"
+// @Success 200 {object} map[string]string
+// @Failure 400 {object} map[string]string
+// @Failure 500 {object} map[string]string
+// @Router /api/content/works/{id}/review [post]
 func (h *Handler) ReviewWork(c *gin.Context) {
 	var req content.ReviewWorkRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -176,7 +234,16 @@ func (h *Handler) ReviewWork(c *gin.Context) {
 }
 
 // SetRecommend 设置推荐
-// POST /api/content/works/:id/recommend
+// @Summary 设置推荐
+// @Description 设置作品推荐状态（管理员）
+// @Tags Content
+// @Accept json
+// @Produce json
+// @Param id path string true "作品ID"
+// @Param request body content.RecommendWorkRequest true "推荐信息"
+// @Success 200 {object} map[string]string
+// @Failure 500 {object} map[string]string
+// @Router /api/content/works/{id}/recommend [post]
 func (h *Handler) SetRecommend(c *gin.Context) {
 	var req content.RecommendWorkRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -195,7 +262,16 @@ func (h *Handler) SetRecommend(c *gin.Context) {
 }
 
 // OfflineWork 下架作品
-// POST /api/content/works/:id/offline
+// @Summary 下架作品
+// @Description 下架指定作品（管理员）
+// @Tags Content
+// @Accept json
+// @Produce json
+// @Param id path string true "作品ID"
+// @Param request body map[string]string false "下架原因"
+// @Success 200 {object} map[string]string
+// @Failure 500 {object} map[string]string
+// @Router /api/content/works/{id}/offline [post]
 func (h *Handler) OfflineWork(c *gin.Context) {
 	var req struct {
 		Reason string `json:"reason"`
@@ -211,7 +287,14 @@ func (h *Handler) OfflineWork(c *gin.Context) {
 }
 
 // GetRecommendWorks 获取推荐作品
-// GET /api/content/works/recommend
+// @Summary 获取推荐作品
+// @Description 获取推荐作品列表
+// @Tags Content
+// @Produce json
+// @Param limit query int false "数量限制"
+// @Success 200 {object} map[string]any
+// @Failure 500 {object} map[string]string
+// @Router /api/content/works/recommend [get]
 func (h *Handler) GetRecommendWorks(c *gin.Context) {
 	tenantID, _, ok := getUserContext(c)
 	if !ok {
@@ -230,7 +313,16 @@ func (h *Handler) GetRecommendWorks(c *gin.Context) {
 }
 
 // SearchWorks 搜索作品（支持全文搜索和高级筛选）
-// POST /api/content/works/search
+// @Summary 搜索作品
+// @Description 搜索作品，支持全文搜索和高级筛选
+// @Tags Content
+// @Accept json
+// @Produce json
+// @Param request body content.SearchWorksRequest true "搜索条件"
+// @Success 200 {object} map[string]any
+// @Failure 400 {object} map[string]string
+// @Failure 500 {object} map[string]string
+// @Router /api/content/works/search [post]
 func (h *Handler) SearchWorks(c *gin.Context) {
 	tenantID, _, ok := getUserContext(c)
 	if !ok {
@@ -275,7 +367,16 @@ func (h *Handler) SearchWorks(c *gin.Context) {
 // ========== 分类管理 ==========
 
 // CreateCategory 创建分类
-// POST /api/content/categories
+// @Summary 创建分类
+// @Description 创建内容分类（管理员）
+// @Tags Content
+// @Accept json
+// @Produce json
+// @Param request body content.CreateCategoryRequest true "分类信息"
+// @Success 201 {object} map[string]any
+// @Failure 400 {object} map[string]string
+// @Failure 500 {object} map[string]string
+// @Router /api/content/categories [post]
 func (h *Handler) CreateCategory(c *gin.Context) {
 	var req content.CreateCategoryRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -300,7 +401,14 @@ func (h *Handler) CreateCategory(c *gin.Context) {
 }
 
 // ListCategories 获取分类列表
-// GET /api/content/categories
+// @Summary 获取分类列表
+// @Description 获取内容分类列表
+// @Tags Content
+// @Produce json
+// @Param parentId query string false "父分类ID"
+// @Success 200 {object} map[string]any
+// @Failure 500 {object} map[string]string
+// @Router /api/content/categories [get]
 func (h *Handler) ListCategories(c *gin.Context) {
 	tenantID, _, ok := getUserContext(c)
 	if !ok {
@@ -318,7 +426,17 @@ func (h *Handler) ListCategories(c *gin.Context) {
 }
 
 // UpdateCategory 更新分类
-// PUT /api/content/categories/:id
+// @Summary 更新分类
+// @Description 更新内容分类（管理员）
+// @Tags Content
+// @Accept json
+// @Produce json
+// @Param id path string true "分类ID"
+// @Param request body map[string]any true "更新字段"
+// @Success 200 {object} map[string]string
+// @Failure 400 {object} map[string]string
+// @Failure 500 {object} map[string]string
+// @Router /api/content/categories/{id} [put]
 func (h *Handler) UpdateCategory(c *gin.Context) {
 	var updates map[string]interface{}
 	if err := c.ShouldBindJSON(&updates); err != nil {
@@ -335,7 +453,14 @@ func (h *Handler) UpdateCategory(c *gin.Context) {
 }
 
 // DeleteCategory 删除分类
-// DELETE /api/content/categories/:id
+// @Summary 删除分类
+// @Description 删除内容分类（管理员）
+// @Tags Content
+// @Produce json
+// @Param id path string true "分类ID"
+// @Success 200 {object} map[string]string
+// @Failure 500 {object} map[string]string
+// @Router /api/content/categories/{id} [delete]
 func (h *Handler) DeleteCategory(c *gin.Context) {
 	if err := h.service.DeleteCategory(c.Request.Context(), c.Param("id")); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
@@ -348,7 +473,15 @@ func (h *Handler) DeleteCategory(c *gin.Context) {
 // ========== 标签管理 ==========
 
 // ListTags 获取标签列表
-// GET /api/content/tags
+// @Summary 获取标签列表
+// @Description 获取内容标签列表
+// @Tags Content
+// @Produce json
+// @Param hotOnly query bool false "仅热门标签"
+// @Param limit query int false "数量限制"
+// @Success 200 {object} map[string]any
+// @Failure 500 {object} map[string]string
+// @Router /api/content/tags [get]
 func (h *Handler) ListTags(c *gin.Context) {
 	tenantID, _, ok := getUserContext(c)
 	if !ok {
@@ -369,7 +502,17 @@ func (h *Handler) ListTags(c *gin.Context) {
 }
 
 // SetHotTag 设置热门标签
-// PUT /api/content/tags/:id/hot
+// @Summary 设置热门标签
+// @Description 设置标签热门状态（管理员）
+// @Tags Content
+// @Accept json
+// @Produce json
+// @Param id path string true "标签ID"
+// @Param request body map[string]bool true "热门状态"
+// @Success 200 {object} map[string]string
+// @Failure 400 {object} map[string]string
+// @Failure 500 {object} map[string]string
+// @Router /api/content/tags/{id}/hot [put]
 func (h *Handler) SetHotTag(c *gin.Context) {
 	var req struct {
 		IsHot bool `json:"isHot"`
@@ -390,7 +533,17 @@ func (h *Handler) SetHotTag(c *gin.Context) {
 // ========== 举报管理 ==========
 
 // CreateReport 创建举报
-// POST /api/content/reports
+// @Summary 创建举报
+// @Description 举报内容
+// @Tags Content
+// @Accept json
+// @Produce json
+// @Param request body content.CreateReportRequest true "举报信息"
+// @Success 201 {object} map[string]any
+// @Failure 400 {object} map[string]string
+// @Failure 409 {object} map[string]string
+// @Failure 500 {object} map[string]string
+// @Router /api/content/reports [post]
 func (h *Handler) CreateReport(c *gin.Context) {
 	var req content.CreateReportRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -421,7 +574,16 @@ func (h *Handler) CreateReport(c *gin.Context) {
 }
 
 // ListReports 获取举报列表
-// GET /api/content/reports
+// @Summary 获取举报列表
+// @Description 获取举报列表（管理员）
+// @Tags Content
+// @Produce json
+// @Param page query int false "页码"
+// @Param pageSize query int false "每页数量"
+// @Param status query string false "状态过滤"
+// @Success 200 {object} map[string]any
+// @Failure 500 {object} map[string]string
+// @Router /api/content/reports [get]
 func (h *Handler) ListReports(c *gin.Context) {
 	tenantID, _, ok := getUserContext(c)
 	if !ok {
@@ -448,7 +610,17 @@ func (h *Handler) ListReports(c *gin.Context) {
 }
 
 // HandleReport 处理举报
-// POST /api/content/reports/:id/handle
+// @Summary 处理举报
+// @Description 处理举报（管理员）
+// @Tags Content
+// @Accept json
+// @Produce json
+// @Param id path string true "举报ID"
+// @Param request body content.HandleReportRequest true "处理信息"
+// @Success 200 {object} map[string]string
+// @Failure 400 {object} map[string]string
+// @Failure 500 {object} map[string]string
+// @Router /api/content/reports/{id}/handle [post]
 func (h *Handler) HandleReport(c *gin.Context) {
 	var req content.HandleReportRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -476,7 +648,13 @@ func (h *Handler) HandleReport(c *gin.Context) {
 // ========== 统计 ==========
 
 // GetContentStats 获取内容统计
-// GET /api/content/stats
+// @Summary 获取内容统计
+// @Description 获取内容统计数据（管理员）
+// @Tags Content
+// @Produce json
+// @Success 200 {object} map[string]any
+// @Failure 500 {object} map[string]string
+// @Router /api/content/stats [get]
 func (h *Handler) GetContentStats(c *gin.Context) {
 	tenantID, _, ok := getUserContext(c)
 	if !ok {

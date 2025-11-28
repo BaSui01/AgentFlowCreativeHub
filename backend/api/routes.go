@@ -53,6 +53,15 @@ func registerAPIRoutes(apiGroup *gin.RouterGroup, c *AppContainer, h *Handlers) 
 	// 租户管理
 	registerTenantRoutes(apiGroup, h, manageRolesGuard)
 
+	// 模型管理
+	registerModelRoutes(apiGroup, h, adminGuard)
+
+	// 模板管理
+	registerTemplateRoutes(apiGroup, h)
+
+	// API Key 管理
+	registerAPIKeyRoutes(apiGroup, h)
+
 	// 通知配置
 	registerNotificationRoutes(apiGroup, h)
 	
@@ -130,6 +139,18 @@ func registerAPIRoutes(apiGroup *gin.RouterGroup, c *AppContainer, h *Handlers) 
 
 	// 工具市场
 	registerMarketplaceRoutes(apiGroup, h, adminGuard)
+
+	// 用户资料
+	registerUserRoutes(apiGroup, h)
+
+	// 指标统计
+	registerMetricsRoutes(apiGroup, h, adminGuard)
+
+	// 知识库共享
+	registerKBSharingRoutes(apiGroup, h)
+
+	// 备忘录
+	registerMemoRoutes(apiGroup, h)
 }
 
 
@@ -215,7 +236,22 @@ func registerModelRoutes(apiGroup *gin.RouterGroup, h *Handlers, adminGuard gin.
 		{
 			credentials.GET("", h.Model.ListModelCredentials)
 			credentials.POST("", adminGuard, h.Model.CreateModelCredential)
+			credentials.PUT("/:credentialId", adminGuard, h.Model.UpdateModelCredential)
 			credentials.DELETE("/:credentialId", adminGuard, h.Model.DeleteModelCredential)
+		}
+
+		// 配额管理（需要管理员权限）
+		if h.Quota != nil {
+			quotas := modelsGroup.Group("/quotas")
+			quotas.Use(adminGuard)
+			{
+				quotas.GET("", h.Quota.ListQuotas)
+				quotas.GET("/:id", h.Quota.GetQuota)
+				quotas.POST("", h.Quota.CreateQuota)
+				quotas.PUT("/:id", h.Quota.UpdateQuota)
+				quotas.DELETE("/:id", h.Quota.DeleteQuota)
+				quotas.GET("/:id/usage", h.Quota.GetQuotaUsage)
+			}
 		}
 
 		modelsGroup.POST("/seed", adminGuard, h.Model.SeedDefaultModels)
@@ -312,6 +348,28 @@ func registerWorkflowRoutes(apiGroup *gin.RouterGroup, h *Handlers, adminGuard g
 				approvals.POST("/:id/reject", h.Automation.RejectRequest)
 				approvals.POST("/:id/resend", h.Automation.ResendNotification)
 			}
+
+			// 审批规则管理
+			if h.ApprovalRule != nil {
+				approvalRules := workflowsGroup.Group("/approval-rules")
+				{
+					approvalRules.GET("", h.ApprovalRule.ListApprovalRules)
+					approvalRules.GET("/:id", h.ApprovalRule.GetApprovalRule)
+					approvalRules.POST("", h.ApprovalRule.CreateApprovalRule)
+					approvalRules.PUT("/:id", h.ApprovalRule.UpdateApprovalRule)
+					approvalRules.DELETE("/:id", h.ApprovalRule.DeleteApprovalRule)
+				}
+			}
+		}
+
+		// 工作流模板管理
+		templates := workflowsGroup.Group("/templates")
+		{
+			templates.GET("", h.WfTemplate.ListTemplates)
+			templates.GET("/:id", h.WfTemplate.GetTemplate)
+			templates.POST("", h.WfTemplate.QuickCreate)
+			templates.PUT("/:id", h.WfTemplate.UpdateWorkflowTemplate)
+			templates.DELETE("/:id", h.WfTemplate.DeleteWorkflowTemplate)
 		}
 	}
 
@@ -374,8 +432,9 @@ func registerToolRoutes(apiGroup *gin.RouterGroup, h *Handlers, adminGuard gin.H
 		toolsGroup.GET("/:name", h.Tool.GetTool)
 		toolsGroup.POST("/:name/execute", h.Tool.ExecuteTool)
 
-		// 管理员接口（工具注册/注销）
+		// 管理员接口（工具注册/更新/注销）
 		toolsGroup.POST("/register", adminGuard, h.Tool.RegisterTool)
+		toolsGroup.PUT("/:name", adminGuard, h.Tool.UpdateTool)
 		toolsGroup.DELETE("/:name", adminGuard, h.Tool.UnregisterTool)
 	}
 }
@@ -708,6 +767,7 @@ func registerContentRoutes(apiGroup *gin.RouterGroup, h *Handlers, adminGuard gi
 		// 评论和点赞
 		contentGroup.GET("/works/:id/comments", h.Content.ListComments)
 		contentGroup.POST("/works/:id/comments", h.Content.CreateComment)
+		contentGroup.DELETE("/works/:id/comments/:commentId", h.Content.DeleteComment)
 		contentGroup.POST("/works/:id/like", h.Content.ToggleLike)
 		
 		// 内容管理（管理员）
@@ -997,5 +1057,127 @@ func registerMarketplaceRoutes(apiGroup *gin.RouterGroup, h *Handlers, adminGuar
 			admin.POST("/packages/:id/reject", h.Marketplace.RejectPackage)
 			admin.POST("/packages/:id/deprecate", h.Marketplace.DeprecatePackage)
 		}
+	}
+}
+
+// registerAPIKeyRoutes 注册 API Key 管理路由
+func registerAPIKeyRoutes(apiGroup *gin.RouterGroup, h *Handlers) {
+	if h.APIKey == nil {
+		return
+	}
+
+	apikeys := apiGroup.Group("/apikeys")
+	{
+		apikeys.POST("", h.APIKey.CreateAPIKey)
+		apikeys.GET("", h.APIKey.ListAPIKeys)
+		apikeys.POST("/:id/revoke", h.APIKey.RevokeAPIKey)
+		apikeys.DELETE("/:id", h.APIKey.DeleteAPIKey)
+	}
+}
+
+// registerUserRoutes 注册用户资料路由
+func registerUserRoutes(apiGroup *gin.RouterGroup, h *Handlers) {
+	if h.User == nil {
+		return
+	}
+
+	userGroup := apiGroup.Group("/user")
+	{
+		// 当前用户资料
+		userGroup.GET("/profile", h.User.GetProfile)
+		userGroup.PUT("/profile", h.User.UpdateProfile)
+
+		// 用户偏好设置
+		userGroup.GET("/preferences", h.User.GetPreferences)
+		userGroup.PUT("/preferences", h.User.UpdatePreferences)
+
+		// 用户活动统计
+		userGroup.GET("/activity", h.User.GetActivity)
+	}
+}
+
+// registerMetricsRoutes 注册指标统计路由
+func registerMetricsRoutes(apiGroup *gin.RouterGroup, h *Handlers, adminGuard gin.HandlerFunc) {
+	if h.Metrics == nil {
+		return
+	}
+
+	metricsGroup := apiGroup.Group("/metrics")
+	{
+		// 用户接口（查看自己的使用情况）
+		metricsGroup.GET("/usage", h.Metrics.GetMyUsage)
+		metricsGroup.GET("/cost", h.Metrics.GetMyCost)
+
+		// 管理员接口
+		metricsGroup.GET("/tenant/usage", adminGuard, h.Metrics.GetTenantUsage)
+		metricsGroup.GET("/tenant/cost", adminGuard, h.Metrics.GetTenantCost)
+		metricsGroup.GET("/models/stats", adminGuard, h.Metrics.GetModelStats)
+		metricsGroup.GET("/models/top-cost", adminGuard, h.Metrics.GetTopCostModels)
+		metricsGroup.GET("/cost/trend", adminGuard, h.Metrics.GetCostTrend)
+		metricsGroup.POST("/model-calls/query", adminGuard, h.Metrics.QueryModelCalls)
+		metricsGroup.POST("/workflow-executions/query", adminGuard, h.Metrics.QueryWorkflowExecutions)
+	}
+}
+
+// registerKBSharingRoutes 注册知识库共享路由
+func registerKBSharingRoutes(apiGroup *gin.RouterGroup, h *Handlers) {
+	if h.KBSharing == nil {
+		return
+	}
+
+	sharingGroup := apiGroup.Group("/knowledge-bases/:id/sharing")
+	{
+		// 创建共享
+		sharingGroup.POST("", h.KBSharing.CreateShare)
+		sharingGroup.GET("", h.KBSharing.ListShares)
+		sharingGroup.GET("/:shareId", h.KBSharing.GetShare)
+		sharingGroup.PUT("/:shareId", h.KBSharing.UpdateShare)
+		sharingGroup.DELETE("/:shareId", h.KBSharing.DeleteShare)
+
+		// 共享接受
+		sharingGroup.POST("/:shareId/accept", h.KBSharing.AcceptShare)
+		sharingGroup.DELETE("/:shareId/accept", h.KBSharing.RevokeAcceptance)
+
+		// 共享访问日志
+		sharingGroup.GET("/:shareId/logs", h.KBSharing.GetAccessLogs)
+	}
+
+	// 通过 token 访问共享
+	shareAccess := apiGroup.Group("/shared-kb")
+	{
+		shareAccess.GET("/:token", h.KBSharing.GetSharedKB)
+		shareAccess.POST("/:token/search", h.KBSharing.SearchSharedKB)
+	}
+
+	// 我收到的共享
+	apiGroup.GET("/received-shares", h.KBSharing.ListReceivedShares)
+}
+
+// registerMemoRoutes 注册备忘录路由
+func registerMemoRoutes(apiGroup *gin.RouterGroup, h *Handlers) {
+	if h.Memo == nil {
+		return
+	}
+
+	memoGroup := apiGroup.Group("/memos")
+	{
+		// 基础 CRUD
+		memoGroup.POST("", h.Memo.Create)
+		memoGroup.GET("", h.Memo.List)
+		memoGroup.GET("/:id", h.Memo.Get)
+		memoGroup.PUT("/:id", h.Memo.Update)
+		memoGroup.DELETE("/:id", h.Memo.Delete)
+
+		// 状态操作
+		memoGroup.POST("/:id/complete", h.Memo.Complete)
+		memoGroup.POST("/:id/archive", h.Memo.Archive)
+		memoGroup.POST("/:id/pin", h.Memo.TogglePin)
+
+		// 分类和标签
+		memoGroup.GET("/categories", h.Memo.ListCategories)
+		memoGroup.GET("/tags", h.Memo.ListTags)
+
+		// 搜索
+		memoGroup.POST("/search", h.Memo.Search)
 	}
 }

@@ -39,7 +39,18 @@ func NewModelHandler(service *models.ModelService, discoveryService *models.Mode
 }
 
 // ListModels 查询模型列表
-// GET /api/models?provider=openai&type=chat&status=active&page=1&page_size=20
+// @Summary 查询模型列表
+// @Description 获取AI模型列表，支持按提供商、类型、状态筛选
+// @Tags Models
+// @Produce json
+// @Param provider query string false "提供商过滤"
+// @Param type query string false "模型类型过滤"
+// @Param status query string false "状态过滤"
+// @Param page query int false "页码"
+// @Param page_size query int false "每页数量"
+// @Success 200 {object} map[string]any
+// @Failure 500 {object} map[string]string
+// @Router /api/models [get]
 func (h *ModelHandler) ListModels(c *gin.Context) {
 	// 获取租户 ID（从中间件注入的上下文中获取）
 	tenantID := c.GetString("tenant_id")
@@ -76,7 +87,15 @@ func (h *ModelHandler) ListModels(c *gin.Context) {
 }
 
 // GetModel 查询单个模型
-// GET /api/models/:id
+// @Summary 获取模型详情
+// @Description 根据ID获取AI模型详细信息
+// @Tags Models
+// @Produce json
+// @Param id path string true "模型ID"
+// @Success 200 {object} map[string]any
+// @Failure 404 {object} map[string]string
+// @Failure 500 {object} map[string]string
+// @Router /api/models/{id} [get]
 func (h *ModelHandler) GetModel(c *gin.Context) {
 	tenantID := c.GetString("tenant_id")
 	modelID := c.Param("id")
@@ -95,7 +114,16 @@ func (h *ModelHandler) GetModel(c *gin.Context) {
 }
 
 // CreateModel 创建模型
-// POST /api/models
+// @Summary 创建AI模型
+// @Description 创建新的AI模型配置
+// @Tags Models
+// @Accept json
+// @Produce json
+// @Param request body models.CreateModelRequest true "创建模型请求"
+// @Success 200 {object} map[string]any
+// @Failure 400 {object} map[string]string
+// @Failure 500 {object} map[string]string
+// @Router /api/models [post]
 func (h *ModelHandler) CreateModel(c *gin.Context) {
 	tenantID := c.GetString("tenant_id")
 
@@ -122,7 +150,18 @@ func (h *ModelHandler) CreateModel(c *gin.Context) {
 }
 
 // UpdateModel 更新模型
-// PUT /api/models/:id
+// @Summary 更新AI模型
+// @Description 更新AI模型配置信息
+// @Tags Models
+// @Accept json
+// @Produce json
+// @Param id path string true "模型ID"
+// @Param request body models.UpdateModelRequest true "更新模型请求"
+// @Success 200 {object} map[string]any
+// @Failure 400 {object} map[string]string
+// @Failure 404 {object} map[string]string
+// @Failure 500 {object} map[string]string
+// @Router /api/models/{id} [put]
 func (h *ModelHandler) UpdateModel(c *gin.Context) {
 	tenantID := c.GetString("tenant_id")
 	modelID := c.Param("id")
@@ -152,7 +191,15 @@ func (h *ModelHandler) UpdateModel(c *gin.Context) {
 }
 
 // DeleteModel 删除模型
-// DELETE /api/models/:id
+// @Summary 删除AI模型
+// @Description 删除指定的AI模型
+// @Tags Models
+// @Produce json
+// @Param id path string true "模型ID"
+// @Success 200 {object} map[string]string
+// @Failure 404 {object} map[string]string
+// @Failure 500 {object} map[string]string
+// @Router /api/models/{id} [delete]
 func (h *ModelHandler) DeleteModel(c *gin.Context) {
 	tenantID := c.GetString("tenant_id")
 	modelID := c.Param("id")
@@ -171,7 +218,16 @@ func (h *ModelHandler) DeleteModel(c *gin.Context) {
 }
 
 // GetModelStats 获取模型统计
-// GET /api/models/:id/stats?start_time=2024-01-01&end_time=2024-12-31
+// @Summary 获取模型调用统计
+// @Description 获取指定模型的调用统计信息
+// @Tags Models
+// @Produce json
+// @Param id path string true "模型ID"
+// @Param start_time query string false "开始时间 (2006-01-02)"
+// @Param end_time query string false "结束时间 (2006-01-02)"
+// @Success 200 {object} map[string]any
+// @Failure 500 {object} map[string]string
+// @Router /api/models/{id}/stats [get]
 func (h *ModelHandler) GetModelStats(c *gin.Context) {
 	tenantID := c.GetString("tenant_id")
 	modelID := c.Param("id")
@@ -204,6 +260,14 @@ func (h *ModelHandler) GetModelStats(c *gin.Context) {
 }
 
 // ListModelCredentials 列出模型绑定的凭证
+// @Summary 列出模型凭证
+// @Description 获取指定模型绑定的所有API凭证
+// @Tags Models
+// @Produce json
+// @Param id path string true "模型ID"
+// @Success 200 {array} models.ModelCredential
+// @Failure 500 {object} map[string]string
+// @Router /api/models/{id}/credentials [get]
 func (h *ModelHandler) ListModelCredentials(c *gin.Context) {
 	tenantID := c.GetString("tenant_id")
 	modelID := c.Param("id")
@@ -222,6 +286,16 @@ func (h *ModelHandler) ListModelCredentials(c *gin.Context) {
 }
 
 // CreateModelCredential 创建模型凭证
+// @Summary 创建模型凭证
+// @Description 为指定模型创建API凭证
+// @Tags Models
+// @Accept json
+// @Produce json
+// @Param id path string true "模型ID"
+// @Param request body createCredentialRequest true "凭证信息"
+// @Success 201 {object} models.ModelCredential
+// @Failure 400 {object} map[string]string
+// @Router /api/models/{id}/credentials [post]
 func (h *ModelHandler) CreateModelCredential(c *gin.Context) {
 	tenantID := c.GetString("tenant_id")
 	modelID := c.Param("id")
@@ -251,7 +325,74 @@ func (h *ModelHandler) CreateModelCredential(c *gin.Context) {
 	c.JSON(http.StatusCreated, cred)
 }
 
+// UpdateModelCredential 更新模型凭证
+// @Summary 更新模型凭证
+// @Description 更新指定模型的API凭证信息
+// @Tags Models
+// @Security BearerAuth
+// @Accept json
+// @Produce json
+// @Param id path string true "模型ID"
+// @Param credentialId path string true "凭证ID"
+// @Param request body UpdateCredentialRequest true "更新内容"
+// @Success 200 {object} map[string]any
+// @Failure 400 {object} map[string]string
+// @Failure 404 {object} map[string]string
+// @Router /api/models/{id}/credentials/{credentialId} [put]
+func (h *ModelHandler) UpdateModelCredential(c *gin.Context) {
+	tenantID := c.GetString("tenant_id")
+	credentialID := c.Param("credentialId")
+
+	var req UpdateCredentialRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "请求参数错误: " + err.Error()})
+		return
+	}
+
+	updateReq := &models.UpdateModelCredentialRequest{
+		TenantID:     tenantID,
+		CredentialID: credentialID,
+	}
+	if req.Name != nil {
+		updateReq.Name = *req.Name
+	}
+	if req.APIKey != nil {
+		updateReq.APIKey = *req.APIKey
+	}
+	if req.BaseURL != nil {
+		updateReq.BaseURL = *req.BaseURL
+	}
+	if req.ExtraHeaders != nil {
+		updateReq.ExtraHeaders = req.ExtraHeaders
+	}
+	if req.Status != nil {
+		updateReq.Status = *req.Status
+	}
+
+	cred, err := h.credentialService.UpdateCredential(c.Request.Context(), updateReq)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			c.JSON(http.StatusNotFound, gin.H{"error": "凭证不存在"})
+			return
+		}
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"message": "更新成功", "credential": cred})
+}
+
 // DeleteModelCredential 删除模型凭证
+// @Summary 删除模型凭证
+// @Description 删除指定的模型API凭证
+// @Tags Models
+// @Security BearerAuth
+// @Produce json
+// @Param id path string true "模型ID"
+// @Param credentialId path string true "凭证ID"
+// @Success 200 {object} map[string]string
+// @Failure 400 {object} map[string]string
+// @Router /api/models/{id}/credentials/{credentialId} [delete]
 func (h *ModelHandler) DeleteModelCredential(c *gin.Context) {
 	tenantID := c.GetString("tenant_id")
 	credentialID := c.Param("credentialId")
@@ -265,7 +406,13 @@ func (h *ModelHandler) DeleteModelCredential(c *gin.Context) {
 }
 
 // SeedDefaultModels 初始化预置模型
-// POST /api/models/seed
+// @Summary 初始化预置模型
+// @Description 为租户初始化系统预置的AI模型
+// @Tags Models
+// @Produce json
+// @Success 200 {object} map[string]string
+// @Failure 500 {object} map[string]string
+// @Router /api/models/seed [post]
 func (h *ModelHandler) SeedDefaultModels(c *gin.Context) {
 	tenantID := c.GetString("tenant_id")
 
@@ -282,7 +429,15 @@ func (h *ModelHandler) SeedDefaultModels(c *gin.Context) {
 }
 
 // DiscoverModels 从指定提供商同步模型
-// POST /api/models/discover/:provider
+// @Summary 发现提供商模型
+// @Description 从指定AI提供商同步可用模型列表
+// @Tags Models
+// @Produce json
+// @Param provider path string true "提供商名称"
+// @Success 200 {object} map[string]any
+// @Failure 400 {object} map[string]string
+// @Failure 500 {object} map[string]string
+// @Router /api/models/discover/{provider} [post]
 func (h *ModelHandler) DiscoverModels(c *gin.Context) {
 	tenantID := c.GetString("tenant_id")
 	provider := c.Param("provider")
@@ -310,7 +465,13 @@ func (h *ModelHandler) DiscoverModels(c *gin.Context) {
 }
 
 // DiscoverAllModels 从所有提供商同步模型
-// POST /api/models/discover-all
+// @Summary 发现所有提供商模型
+// @Description 从所有已配置的AI提供商同步可用模型列表
+// @Tags Models
+// @Produce json
+// @Success 200 {object} map[string]any
+// @Failure 500 {object} map[string]string
+// @Router /api/models/discover-all [post]
 func (h *ModelHandler) DiscoverAllModels(c *gin.Context) {
 	tenantID := c.GetString("tenant_id")
 

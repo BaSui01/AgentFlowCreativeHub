@@ -11,6 +11,7 @@ import (
 
 	"backend/api/handlers/agents"
 	analyticsHandlers "backend/api/handlers/analytics"
+	apikeyHandlers "backend/api/handlers/apikey"
 	billingHandlers "backend/api/handlers/billing"
 	bookparserHandlers "backend/api/handlers/bookparser"
 	moderationHandlers "backend/api/handlers/moderation"
@@ -20,8 +21,12 @@ import (
 	contentHandlers "backend/api/handlers/content"
 	subscriptionHandlers "backend/api/handlers/subscription"
 	fragmentHandlers "backend/api/handlers/fragment"
+	kbsharingHandlers "backend/api/handlers/kbsharing"
+	memoHandlers "backend/api/handlers/memo"
+	metricsHandlers "backend/api/handlers/metrics"
 	multimodelHandlers "backend/api/handlers/multimodel"
 	plotHandlers "backend/api/handlers/plot"
+	userHandlers "backend/api/handlers/user"
 	marketplaceHandlers "backend/internal/tools/marketplace"
 	auditHandlers "backend/api/handlers/audit"
 	authHandlers "backend/api/handlers/auth"
@@ -50,8 +55,10 @@ import (
 	"backend/internal/fragment"
 	"backend/internal/multimodel"
 	"backend/internal/plot"
+	"backend/internal/memo"
 	"backend/internal/metrics"
 	"backend/internal/moderation"
+	"backend/internal/user"
 	"backend/internal/worldbuilder"
 	"backend/internal/subscription"
 	auditpkg "backend/internal/audit"
@@ -89,7 +96,7 @@ type AppContainer struct {
 	// 基础设施
 	DB          *gorm.DB
 	Config      *config.Config
-	RedisClient *redis.Client
+	RedisClient redis.UniversalClient
 	QueueClient queue.Client
 
 	// 认证相关
@@ -108,6 +115,7 @@ type AppContainer struct {
 	// 核心服务
 	ModelService           *modelSvc.ModelService
 	ModelCredentialService *modelSvc.ModelCredentialService
+	ModelQuotaService      *modelSvc.ModelQuotaService
 	ModelDiscoveryService  *modelSvc.ModelDiscoveryService
 	TemplateService        *templateSvc.TemplateService
 	AgentService           *agentSvc.AgentService
@@ -181,6 +189,21 @@ type AppContainer struct {
 	// 工具市场服务
 	MarketplaceService *marketplaceHandlers.Service
 
+	// API Key 服务
+	APIKeyService *auth.APIKeyService
+
+	// 用户资料服务
+	UserProfileService *user.ProfileService
+
+	// 指标统计服务
+	MetricsService metrics.MetricsServiceInterface
+
+	// 知识库共享服务
+	KBSharingService *rag.KBSharingService
+
+	// 备忘录服务
+	MemoService *memo.MemoService
+
 	// 工具相关
 	ToolRegistry *tools.ToolRegistry
 	ToolExecutor *tools.ToolExecutor
@@ -248,6 +271,38 @@ type Handlers struct {
 	Marketplace        *marketplaceHandlers.Handler
 	Message            *notificationHandlers.MessageHandler
 	WorkspaceTemplate  *workspaceHandlers.TemplateHandler
+	APIKey             *apikeyHandlers.Handler
+	User               *userHandlers.Handler
+	Metrics            *metricsHandlers.Handler
+	KBSharing          *kbsharingHandlers.Handler
+	Memo               *memoHandlers.Handler
+	Quota              *models.QuotaHandler
+	ApprovalRule       *workflows.ApprovalRuleHandler
+}
+
+// shouldAutoMigrate 检查是否应该执行自动迁移
+func (c *AppContainer) shouldAutoMigrate() bool {
+	return c.Config != nil && c.Config.Database.AutoMigrate
+}
+
+// autoMigrate 条件执行自动迁移
+func (c *AppContainer) autoMigrate(migrator interface{ AutoMigrate() error }, name string) {
+	if !c.shouldAutoMigrate() {
+		return
+	}
+	if err := migrator.AutoMigrate(); err != nil {
+		logger.Warn(name+"表迁移失败", zap.Error(err))
+	}
+}
+
+// autoMigrateDB 条件执行 GORM 自动迁移
+func (c *AppContainer) autoMigrateDB(db *gorm.DB, name string, models ...interface{}) {
+	if !c.shouldAutoMigrate() {
+		return
+	}
+	if err := db.AutoMigrate(models...); err != nil {
+		logger.Warn(name+"表迁移失败", zap.Error(err))
+	}
 }
 
 // InitContainer 初始化依赖注入容器
@@ -391,6 +446,39 @@ func (c *AppContainer) InitHandlers() *Handlers {
 	// 工作流模板 Handler
 	h.WfTemplate = workflows.NewTemplateHandler(c.DB, c.WorkflowInitializer.GetTemplateLoader(), c.WorkflowInitializer.GetCapabilityLoader())
 
+	// API Key Handler
+	if c.APIKeyService != nil {
+		h.APIKey = apikeyHandlers.NewHandler(c.APIKeyService)
+	}
+
+	// 用户资料 Handler
+	if c.UserProfileService != nil {
+		h.User = userHandlers.NewHandler(c.UserProfileService)
+	}
+
+	// 指标统计 Handler
+	if c.MetricsService != nil {
+		h.Metrics = metricsHandlers.NewHandler(c.MetricsService)
+	}
+
+	// 知识库共享 Handler
+	if c.KBSharingService != nil {
+		h.KBSharing = kbsharingHandlers.NewHandler(c.KBSharingService)
+	}
+
+	// 备忘录 Handler
+	if c.MemoService != nil {
+		h.Memo = memoHandlers.NewHandler(c.MemoService)
+	}
+
+	// 配额管理 Handler
+	if c.ModelQuotaService != nil {
+		h.Quota = models.NewQuotaHandler(c.ModelQuotaService)
+	}
+
+	// 审批规则 Handler
+	h.ApprovalRule = workflows.NewApprovalRuleHandler(c.DB)
+
 	return h
 }
 
@@ -401,20 +489,65 @@ func (c *AppContainer) initRedis(cfg *config.Config) error {
 	cfg.Redis = redisCfg
 	c.QueueClient = queue.NewClient(redisCfg)
 
-	redisClient := redis.NewClient(&redis.Options{
-		Addr:     fmt.Sprintf("%s:%d", redisCfg.Host, redisCfg.Port),
-		Password: redisCfg.Password,
-		DB:       redisCfg.DB,
-		MaintNotificationsConfig: &maintnotifications.Config{
-			Mode: maintnotifications.ModeDisabled,
-		},
-	})
+	// 根据模式创建 Redis 客户端
+	mode := redisCfg.Mode
+	if mode == "" {
+		mode = "standalone"
+	}
+
+	var redisClient redis.UniversalClient
+
+	switch mode {
+	case "standalone":
+		redisClient = redis.NewClient(&redis.Options{
+			Addr:         fmt.Sprintf("%s:%d", redisCfg.Host, redisCfg.Port),
+			Password:     redisCfg.Password,
+			DB:           redisCfg.DB,
+			PoolSize:     redisCfg.PoolSize,
+			MinIdleConns: redisCfg.MinIdleConns,
+			MaintNotificationsConfig: &maintnotifications.Config{
+				Mode: maintnotifications.ModeDisabled,
+			},
+		})
+		logger.Info("Redis 单节点模式初始化", zap.String("addr", fmt.Sprintf("%s:%d", redisCfg.Host, redisCfg.Port)))
+
+	case "sentinel":
+		if redisCfg.MasterName == "" || len(redisCfg.SentinelAddrs) == 0 {
+			return fmt.Errorf("哨兵模式需要配置 master_name 和 sentinel_addrs")
+		}
+		redisClient = redis.NewFailoverClient(&redis.FailoverOptions{
+			MasterName:       redisCfg.MasterName,
+			SentinelAddrs:    redisCfg.SentinelAddrs,
+			SentinelPassword: redisCfg.SentinelPassword,
+			Password:         redisCfg.Password,
+			DB:               redisCfg.DB,
+			PoolSize:         redisCfg.PoolSize,
+			MinIdleConns:     redisCfg.MinIdleConns,
+		})
+		logger.Info("Redis 哨兵模式初始化", zap.String("master", redisCfg.MasterName), zap.Strings("sentinels", redisCfg.SentinelAddrs))
+
+	case "cluster":
+		if len(redisCfg.ClusterAddrs) == 0 {
+			return fmt.Errorf("集群模式需要配置 cluster_addrs")
+		}
+		redisClient = redis.NewClusterClient(&redis.ClusterOptions{
+			Addrs:        redisCfg.ClusterAddrs,
+			Password:     redisCfg.Password,
+			PoolSize:     redisCfg.PoolSize,
+			MinIdleConns: redisCfg.MinIdleConns,
+		})
+		logger.Info("Redis 集群模式初始化", zap.Strings("addrs", redisCfg.ClusterAddrs))
+
+	default:
+		return fmt.Errorf("不支持的 Redis 模式: %s (可选: standalone, sentinel, cluster)", mode)
+	}
 
 	if err := redisClient.Ping(context.Background()).Err(); err != nil {
 		logger.Warn("Redis 不可用，自动化审批与 OAuth2 状态将退回内存实现", zap.Error(err))
 		c.RedisClient = nil
 	} else {
 		c.RedisClient = redisClient
+		logger.Info("Redis 连接成功", zap.String("mode", mode))
 	}
 
 	return nil
@@ -501,6 +634,7 @@ func (c *AppContainer) initTenant(db *gorm.DB) error {
 func (c *AppContainer) initCoreServices(db *gorm.DB, cfg *config.Config) error {
 	c.ModelService = modelSvc.NewModelService(db)
 	c.ModelCredentialService = modelSvc.NewModelCredentialService(db)
+	c.ModelQuotaService = modelSvc.NewModelQuotaService(db)
 	c.ModelDiscoveryService = modelSvc.NewModelDiscoveryService(db, nil)
 	c.TemplateService = templateSvc.NewTemplateService(db)
 	c.AgentService = agentSvc.NewAgentService(db)
@@ -724,6 +858,21 @@ func (c *AppContainer) initAgentRuntime(db *gorm.DB, cfg *config.Config) error {
 	if err := c.MarketplaceService.AutoMigrate(); err != nil {
 		logger.Warn("工具市场服务表迁移失败", zap.Error(err))
 	}
+
+	// API Key 服务
+	c.APIKeyService = auth.NewAPIKeyService(db)
+
+	// 指标统计服务
+	c.MetricsService = metrics.NewMetricsService(db)
+
+	// 知识库共享服务
+	c.KBSharingService = rag.NewKBSharingService(nil, nil, 5*time.Minute)
+
+	// 备忘录服务
+	c.MemoService = memo.NewMemoService(nil)
+
+	// 用户资料服务
+	c.UserProfileService = user.NewProfileService(nil)
 
 	return nil
 }

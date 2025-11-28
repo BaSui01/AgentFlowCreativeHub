@@ -269,8 +269,82 @@ func (h *ToolHandler) RegisterTool(c *gin.Context) {
 	c.JSON(http.StatusCreated, response.APIResponse{Success: true, Data: gin.H{"tool": definition}})
 }
 
+// UpdateTool 更新工具配置
+// @Summary 更新工具配置
+// @Description 更新自定义工具的配置信息，内置工具不可更新
+// @Tags Tools
+// @Security BearerAuth
+// @Accept json
+// @Produce json
+// @Param name path string true "工具名称"
+// @Param request body UpdateToolRequest true "更新内容"
+// @Success 200 {object} response.APIResponse{data=tools.ToolDefinition}
+// @Failure 400 {object} response.ErrorResponse
+// @Failure 403 {object} response.ErrorResponse
+// @Failure 404 {object} response.ErrorResponse
+// @Router /api/tools/{name} [put]
+func (h *ToolHandler) UpdateTool(c *gin.Context) {
+	tenantID := c.GetString("tenant_id")
+	name := c.Param("name")
+
+	definition, exists := h.registry.GetDefinition(name)
+	if !exists {
+		c.JSON(http.StatusNotFound, response.ErrorResponse{Success: false, Message: "工具不存在"})
+		return
+	}
+	if definition.Type == "builtin" {
+		c.JSON(http.StatusBadRequest, response.ErrorResponse{Success: false, Message: "内置工具不可更新"})
+		return
+	}
+	if !isToolAccessible(definition, tenantID) {
+		c.JSON(http.StatusForbidden, response.ErrorResponse{Success: false, Message: "无权操作该工具"})
+		return
+	}
+
+	var req UpdateToolRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, response.ErrorResponse{Success: false, Message: "请求参数错误: " + err.Error()})
+		return
+	}
+
+	// 更新字段
+	if req.DisplayName != nil {
+		definition.DisplayName = *req.DisplayName
+	}
+	if req.Description != nil {
+		definition.Description = *req.Description
+	}
+	if req.Category != nil {
+		definition.Category = *req.Category
+	}
+	if req.Parameters != nil {
+		definition.Parameters = req.Parameters
+	}
+	if req.HTTPConfig != nil {
+		definition.HTTPConfig = req.HTTPConfig
+	}
+	if req.RequireAuth != nil {
+		definition.RequireAuth = *req.RequireAuth
+	}
+	if req.Scopes != nil {
+		definition.Scopes = req.Scopes
+	}
+	if req.Timeout != nil {
+		definition.Timeout = *req.Timeout
+	}
+	if req.MaxRetries != nil {
+		definition.MaxRetries = *req.MaxRetries
+	}
+	if req.Status != nil {
+		definition.Status = *req.Status
+	}
+
+	c.JSON(http.StatusOK, response.APIResponse{Success: true, Message: "工具更新成功", Data: definition})
+}
+
 // UnregisterTool 注销工具
 // @Summary 注销工具
+// @Description 注销自定义工具，内置工具不可注销
 // @Tags Tools
 // @Security BearerAuth
 // @Produce json

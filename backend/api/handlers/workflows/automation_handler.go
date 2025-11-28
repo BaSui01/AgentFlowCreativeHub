@@ -16,7 +16,7 @@ import (
 // AutomationHandler 自动化工作流处理器
 type AutomationHandler struct {
 	db               *gorm.DB
-	redisClient      *redis.Client
+	redisClient      redis.UniversalClient
 	automationEngine *executor.AutomationEngine
 	approvalManager  *approval.Manager
 }
@@ -25,7 +25,7 @@ type AutomationHandler struct {
 
 func NewAutomationHandler(
 	db *gorm.DB,
-	redisClient *redis.Client,
+	redisClient redis.UniversalClient,
 	automationEngine *executor.AutomationEngine,
 	approvalMgr *approval.Manager,
 ) *AutomationHandler {

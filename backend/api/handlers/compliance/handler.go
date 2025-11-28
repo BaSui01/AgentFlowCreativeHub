@@ -33,7 +33,16 @@ func getUserContext(c *gin.Context) (tenantID, userID string, ok bool) {
 // ========== 实名认证 ==========
 
 // SubmitVerification 提交实名认证
-// POST /api/compliance/verifications
+// @Summary 提交实名认证
+// @Description 提交用户实名认证申请
+// @Tags Compliance
+// @Accept json
+// @Produce json
+// @Param request body compliance.SubmitVerificationRequest true "认证信息"
+// @Success 201 {object} map[string]any
+// @Failure 400 {object} map[string]string
+// @Failure 409 {object} map[string]string
+// @Router /api/compliance/verifications [post]
 func (h *Handler) SubmitVerification(c *gin.Context) {
 	var req compliance.SubmitVerificationRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -66,7 +75,13 @@ func (h *Handler) SubmitVerification(c *gin.Context) {
 }
 
 // GetMyVerification 获取我的认证状态
-// GET /api/compliance/verifications/me
+// @Summary 获取我的认证状态
+// @Description 获取当前用户的实名认证状态
+// @Tags Compliance
+// @Produce json
+// @Success 200 {object} map[string]any
+// @Failure 401 {object} map[string]string
+// @Router /api/compliance/verifications/me [get]
 func (h *Handler) GetMyVerification(c *gin.Context) {
 	_, userID, ok := getUserContext(c)
 	if !ok {
@@ -88,7 +103,16 @@ func (h *Handler) GetMyVerification(c *gin.Context) {
 }
 
 // ListVerifications 获取认证列表（管理员）
-// GET /api/compliance/verifications
+// @Summary 获取认证列表
+// @Description 获取实名认证列表（管理员）
+// @Tags Compliance
+// @Produce json
+// @Param page query int false "页码"
+// @Param pageSize query int false "每页数量"
+// @Param status query string false "状态过滤"
+// @Success 200 {object} map[string]any
+// @Failure 500 {object} map[string]string
+// @Router /api/compliance/verifications [get]
 func (h *Handler) ListVerifications(c *gin.Context) {
 	tenantID, _, ok := getUserContext(c)
 	if !ok {
@@ -115,7 +139,17 @@ func (h *Handler) ListVerifications(c *gin.Context) {
 }
 
 // ReviewVerification 审核实名认证
-// POST /api/compliance/verifications/:id/review
+// @Summary 审核实名认证
+// @Description 审核用户实名认证（管理员）
+// @Tags Compliance
+// @Accept json
+// @Produce json
+// @Param id path string true "认证ID"
+// @Param request body compliance.ReviewVerificationRequest true "审核信息"
+// @Success 200 {object} map[string]string
+// @Failure 400 {object} map[string]string
+// @Failure 500 {object} map[string]string
+// @Router /api/compliance/verifications/{id}/review [post]
 func (h *Handler) ReviewVerification(c *gin.Context) {
 	var req compliance.ReviewVerificationRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -143,7 +177,16 @@ func (h *Handler) ReviewVerification(c *gin.Context) {
 // ========== 内容分级 ==========
 
 // SetContentRating 设置内容分级
-// POST /api/compliance/ratings
+// @Summary 设置内容分级
+// @Description 设置内容的年龄分级
+// @Tags Compliance
+// @Accept json
+// @Produce json
+// @Param request body compliance.SetContentRatingRequest true "分级信息"
+// @Success 200 {object} map[string]any
+// @Failure 400 {object} map[string]string
+// @Failure 500 {object} map[string]string
+// @Router /api/compliance/ratings [post]
 func (h *Handler) SetContentRating(c *gin.Context) {
 	var req compliance.SetContentRatingRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -168,7 +211,15 @@ func (h *Handler) SetContentRating(c *gin.Context) {
 }
 
 // GetContentRating 获取内容分级
-// GET /api/compliance/ratings/:contentId
+// @Summary 获取内容分级
+// @Description 获取内容的年龄分级信息
+// @Tags Compliance
+// @Produce json
+// @Param contentId path string true "内容ID"
+// @Param contentType query string false "内容类型"
+// @Success 200 {object} map[string]any
+// @Failure 500 {object} map[string]string
+// @Router /api/compliance/ratings/{contentId} [get]
 func (h *Handler) GetContentRating(c *gin.Context) {
 	contentID := c.Param("contentId")
 	contentType := c.DefaultQuery("contentType", "work")
@@ -190,7 +241,16 @@ func (h *Handler) GetContentRating(c *gin.Context) {
 // ========== 合规检查 ==========
 
 // RunComplianceCheck 执行合规检查
-// POST /api/compliance/checks
+// @Summary 执行合规检查
+// @Description 执行内容合规检查
+// @Tags Compliance
+// @Accept json
+// @Produce json
+// @Param request body compliance.RunComplianceCheckRequest true "检查请求"
+// @Success 200 {object} map[string]any
+// @Failure 400 {object} map[string]string
+// @Failure 500 {object} map[string]string
+// @Router /api/compliance/checks [post]
 func (h *Handler) RunComplianceCheck(c *gin.Context) {
 	var req compliance.RunComplianceCheckRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -215,7 +275,16 @@ func (h *Handler) RunComplianceCheck(c *gin.Context) {
 }
 
 // ListComplianceChecks 获取检查列表
-// GET /api/compliance/checks
+// @Summary 获取检查列表
+// @Description 获取合规检查记录列表
+// @Tags Compliance
+// @Produce json
+// @Param page query int false "页码"
+// @Param pageSize query int false "每页数量"
+// @Param status query string false "状态过滤"
+// @Success 200 {object} map[string]any
+// @Failure 500 {object} map[string]string
+// @Router /api/compliance/checks [get]
 func (h *Handler) ListComplianceChecks(c *gin.Context) {
 	tenantID, _, ok := getUserContext(c)
 	if !ok {
@@ -244,7 +313,16 @@ func (h *Handler) ListComplianceChecks(c *gin.Context) {
 // ========== 版权保护 ==========
 
 // RegisterCopyright 登记版权
-// POST /api/compliance/copyrights
+// @Summary 登记版权
+// @Description 登记内容版权信息
+// @Tags Compliance
+// @Accept json
+// @Produce json
+// @Param request body map[string]string true "版权信息"
+// @Success 201 {object} map[string]any
+// @Failure 400 {object} map[string]string
+// @Failure 500 {object} map[string]string
+// @Router /api/compliance/copyrights [post]
 func (h *Handler) RegisterCopyright(c *gin.Context) {
 	var req struct {
 		ContentID     string `json:"contentId" binding:"required"`
@@ -275,7 +353,14 @@ func (h *Handler) RegisterCopyright(c *gin.Context) {
 }
 
 // GetCopyrightRecord 获取版权记录
-// GET /api/compliance/copyrights/:contentId
+// @Summary 获取版权记录
+// @Description 获取内容版权登记信息
+// @Tags Compliance
+// @Produce json
+// @Param contentId path string true "内容ID"
+// @Success 200 {object} map[string]any
+// @Failure 500 {object} map[string]string
+// @Router /api/compliance/copyrights/{contentId} [get]
 func (h *Handler) GetCopyrightRecord(c *gin.Context) {
 	contentID := c.Param("contentId")
 
@@ -296,7 +381,17 @@ func (h *Handler) GetCopyrightRecord(c *gin.Context) {
 // ========== 风险提示 ==========
 
 // ListRiskAlerts 获取风险提示列表
-// GET /api/compliance/alerts
+// @Summary 获取风险提示列表
+// @Description 获取合规风险提示列表
+// @Tags Compliance
+// @Produce json
+// @Param page query int false "页码"
+// @Param pageSize query int false "每页数量"
+// @Param unresolvedOnly query bool false "仅未解决"
+// @Param all query bool false "查看全部"
+// @Success 200 {object} map[string]any
+// @Failure 500 {object} map[string]string
+// @Router /api/compliance/alerts [get]
 func (h *Handler) ListRiskAlerts(c *gin.Context) {
 	tenantID, userID, ok := getUserContext(c)
 	if !ok {
@@ -329,7 +424,14 @@ func (h *Handler) ListRiskAlerts(c *gin.Context) {
 }
 
 // ResolveRiskAlert 解决风险提示
-// POST /api/compliance/alerts/:id/resolve
+// @Summary 解决风险提示
+// @Description 标记风险提示为已解决
+// @Tags Compliance
+// @Produce json
+// @Param id path string true "提示ID"
+// @Success 200 {object} map[string]string
+// @Failure 500 {object} map[string]string
+// @Router /api/compliance/alerts/{id}/resolve [post]
 func (h *Handler) ResolveRiskAlert(c *gin.Context) {
 	_, userID, ok := getUserContext(c)
 	if !ok {
@@ -348,7 +450,16 @@ func (h *Handler) ResolveRiskAlert(c *gin.Context) {
 // ========== 合规报告 ==========
 
 // GenerateComplianceReport 生成合规报告
-// POST /api/compliance/reports
+// @Summary 生成合规报告
+// @Description 生成合规统计报告
+// @Tags Compliance
+// @Accept json
+// @Produce json
+// @Param request body map[string]string true "报告参数"
+// @Success 201 {object} map[string]any
+// @Failure 400 {object} map[string]string
+// @Failure 500 {object} map[string]string
+// @Router /api/compliance/reports [post]
 func (h *Handler) GenerateComplianceReport(c *gin.Context) {
 	var req struct {
 		ReportType  string `json:"reportType" binding:"required"`
@@ -386,7 +497,15 @@ func (h *Handler) GenerateComplianceReport(c *gin.Context) {
 }
 
 // ListComplianceReports 获取报告列表
-// GET /api/compliance/reports
+// @Summary 获取报告列表
+// @Description 获取合规报告列表
+// @Tags Compliance
+// @Produce json
+// @Param page query int false "页码"
+// @Param pageSize query int false "每页数量"
+// @Success 200 {object} map[string]any
+// @Failure 500 {object} map[string]string
+// @Router /api/compliance/reports [get]
 func (h *Handler) ListComplianceReports(c *gin.Context) {
 	tenantID, _, ok := getUserContext(c)
 	if !ok {
@@ -412,7 +531,14 @@ func (h *Handler) ListComplianceReports(c *gin.Context) {
 }
 
 // GetComplianceReport 获取报告详情
-// GET /api/compliance/reports/:id
+// @Summary 获取报告详情
+// @Description 获取合规报告详情
+// @Tags Compliance
+// @Produce json
+// @Param id path string true "报告ID"
+// @Success 200 {object} map[string]any
+// @Failure 500 {object} map[string]string
+// @Router /api/compliance/reports/{id} [get]
 func (h *Handler) GetComplianceReport(c *gin.Context) {
 	report, err := h.service.GetComplianceReport(c.Request.Context(), c.Param("id"))
 	if err != nil {
@@ -426,7 +552,13 @@ func (h *Handler) GetComplianceReport(c *gin.Context) {
 // ========== 统计 ==========
 
 // GetComplianceStats 获取合规统计
-// GET /api/compliance/stats
+// @Summary 获取合规统计
+// @Description 获取合规统计数据
+// @Tags Compliance
+// @Produce json
+// @Success 200 {object} map[string]any
+// @Failure 500 {object} map[string]string
+// @Router /api/compliance/stats [get]
 func (h *Handler) GetComplianceStats(c *gin.Context) {
 	tenantID, _, ok := getUserContext(c)
 	if !ok {

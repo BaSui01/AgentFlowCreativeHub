@@ -24,6 +24,15 @@ func NewHandler(svc *workspaceSvc.Service) *Handler {
 }
 
 // GetTree 返回文件树
+// @Summary 获取文件树
+// @Description 获取工作区文件树结构
+// @Tags Files
+// @Produce json
+// @Param depth query int false "深度限制"
+// @Param cursor query string false "游标"
+// @Success 200 {object} map[string]any
+// @Failure 500 {object} map[string]string
+// @Router /api/files/tree [get]
 func (h *Handler) GetTree(c *gin.Context) {
 	tenantID := c.GetString("tenant_id")
 	userID := c.GetString("user_id")
@@ -50,6 +59,14 @@ func (h *Handler) GetTree(c *gin.Context) {
 }
 
 // GetContent 获取文件内容
+// @Summary 获取文件内容
+// @Description 获取指定文件的内容
+// @Tags Files
+// @Produce json
+// @Param nodeId query string true "节点ID"
+// @Success 200 {object} map[string]any
+// @Failure 400 {object} map[string]string
+// @Router /api/files/content [get]
 func (h *Handler) GetContent(c *gin.Context) {
 	tenantID := c.GetString("tenant_id")
 	nodeID := c.Query("nodeId")
@@ -78,6 +95,18 @@ type saveFileDTO struct {
 }
 
 // CreateFile 新建或保存文件
+// @Summary 创建或保存文件
+// @Description 新建文件或保存已有文件内容
+// @Tags Files
+// @Accept json
+// @Produce json
+// @Param request body saveFileDTO true "文件信息"
+// @Param If-Match header string false "版本校验（更新时必填）"
+// @Success 200 {object} map[string]any
+// @Success 201 {object} map[string]any
+// @Failure 400 {object} map[string]string
+// @Failure 409 {object} map[string]string
+// @Router /api/files [post]
 func (h *Handler) CreateFile(c *gin.Context) {
 	tenantID := c.GetString("tenant_id")
 	userID := c.GetString("user_id")
@@ -144,6 +173,16 @@ type patchFileDTO struct {
 }
 
 // PatchFile 重命名/移动文件
+// @Summary 重命名或移动文件
+// @Description 重命名或移动文件到新位置
+// @Tags Files
+// @Accept json
+// @Produce json
+// @Param request body patchFileDTO true "更新信息"
+// @Param If-Match header string false "版本校验"
+// @Success 200 {object} map[string]any
+// @Failure 400 {object} map[string]string
+// @Router /api/files [patch]
 func (h *Handler) PatchFile(c *gin.Context) {
 	tenantID := c.GetString("tenant_id")
 	userID := c.GetString("user_id")
@@ -174,6 +213,15 @@ func (h *Handler) PatchFile(c *gin.Context) {
 }
 
 // DeleteFile 删除文件
+// @Summary 删除文件
+// @Description 删除指定文件
+// @Tags Files
+// @Produce json
+// @Param id path string true "文件ID"
+// @Success 200 {object} map[string]any
+// @Failure 400 {object} map[string]string
+// @Failure 500 {object} map[string]string
+// @Router /api/files/{id} [delete]
 func (h *Handler) DeleteFile(c *gin.Context) {
 	tenantID := c.GetString("tenant_id")
 	nodeID := c.Param("id")
@@ -195,6 +243,16 @@ type searchFileDTO struct {
 }
 
 // SearchFiles 搜索
+// @Summary 搜索文件
+// @Description 搜索文件内容
+// @Tags Files
+// @Accept json
+// @Produce json
+// @Param request body searchFileDTO true "搜索条件"
+// @Success 200 {object} map[string]any
+// @Failure 400 {object} map[string]string
+// @Failure 500 {object} map[string]string
+// @Router /api/files/search [post]
 func (h *Handler) SearchFiles(c *gin.Context) {
 	tenantID := c.GetString("tenant_id")
 	var dto searchFileDTO
@@ -221,6 +279,15 @@ func (h *Handler) SearchFiles(c *gin.Context) {
 }
 
 // GetHistory 版本记录
+// @Summary 获取文件版本历史
+// @Description 获取文件的版本变更记录
+// @Tags Files
+// @Produce json
+// @Param nodeId path string true "节点ID"
+// @Param limit query int false "数量限制"
+// @Success 200 {object} map[string]any
+// @Failure 400 {object} map[string]string
+// @Router /api/files/history/{nodeId} [get]
 func (h *Handler) GetHistory(c *gin.Context) {
 	tenantID := c.GetString("tenant_id")
 	nodeID := c.Param("nodeId")
@@ -248,6 +315,15 @@ type revertFileDTO struct {
 }
 
 // RevertFile 恢复版本
+// @Summary 恢复文件版本
+// @Description 将文件恢复到指定版本
+// @Tags Files
+// @Accept json
+// @Produce json
+// @Param request body revertFileDTO true "恢复信息"
+// @Success 200 {object} map[string]any
+// @Failure 400 {object} map[string]string
+// @Router /api/files/revert [post]
 func (h *Handler) RevertFile(c *gin.Context) {
 	tenantID := c.GetString("tenant_id")
 	userID := c.GetString("user_id")
@@ -265,6 +341,16 @@ func (h *Handler) RevertFile(c *gin.Context) {
 }
 
 // DiffVersions 差异比对
+// @Summary 版本差异比对
+// @Description 比对两个版本之间的差异
+// @Tags Files
+// @Produce json
+// @Param versionA query string true "版本A"
+// @Param versionB query string true "版本B"
+// @Success 200 {object} map[string]any
+// @Failure 400 {object} map[string]string
+// @Failure 404 {object} map[string]string
+// @Router /api/files/diff [get]
 func (h *Handler) DiffVersions(c *gin.Context) {
 	tenantID := c.GetString("tenant_id")
 	versionA := c.Query("versionA")
@@ -298,6 +384,15 @@ type initiateUploadDTO struct {
 }
 
 // InitiateUpload 初始化分片上传
+// @Summary 初始化分片上传
+// @Description 初始化大文件分片上传
+// @Tags Files
+// @Accept json
+// @Produce json
+// @Param request body initiateUploadDTO true "上传信息"
+// @Success 200 {object} map[string]any
+// @Failure 400 {object} map[string]string
+// @Router /api/files/upload/initiate [post]
 func (h *Handler) InitiateUpload(c *gin.Context) {
 	tenantID := c.GetString("tenant_id")
 	userID := c.GetString("user_id")
@@ -323,6 +418,17 @@ func (h *Handler) InitiateUpload(c *gin.Context) {
 }
 
 // UploadChunk 上传分片
+// @Summary 上传分片
+// @Description 上传文件分片数据
+// @Tags Files
+// @Accept multipart/form-data
+// @Produce json
+// @Param uploadId path string true "上传ID"
+// @Param chunkIndex formData int true "分片索引"
+// @Param chunk formData file true "分片数据"
+// @Success 200 {object} map[string]any
+// @Failure 400 {object} map[string]string
+// @Router /api/files/upload/{uploadId}/chunk [post]
 func (h *Handler) UploadChunk(c *gin.Context) {
 	tenantID := c.GetString("tenant_id")
 	userID := c.GetString("user_id")
@@ -368,6 +474,16 @@ type completeUploadDTO struct {
 }
 
 // CompleteUpload 完成上传
+// @Summary 完成上传
+// @Description 完成分片上传合并文件
+// @Tags Files
+// @Accept json
+// @Produce json
+// @Param uploadId path string true "上传ID"
+// @Param request body completeUploadDTO false "完成信息"
+// @Success 200 {object} map[string]any
+// @Failure 400 {object} map[string]string
+// @Router /api/files/upload/{uploadId}/complete [post]
 func (h *Handler) CompleteUpload(c *gin.Context) {
 	tenantID := c.GetString("tenant_id")
 	userID := c.GetString("user_id")
@@ -389,6 +505,16 @@ func (h *Handler) CompleteUpload(c *gin.Context) {
 }
 
 // UploadFile 单文件上传（小文件）
+// @Summary 单文件上传
+// @Description 上传小文件（非分片）
+// @Tags Files
+// @Accept multipart/form-data
+// @Produce json
+// @Param file formData file true "文件"
+// @Param parentId formData string false "父目录ID"
+// @Success 201 {object} map[string]any
+// @Failure 400 {object} map[string]string
+// @Router /api/files/upload [post]
 func (h *Handler) UploadFile(c *gin.Context) {
 	tenantID := c.GetString("tenant_id")
 	userID := c.GetString("user_id")
@@ -422,6 +548,15 @@ func (h *Handler) UploadFile(c *gin.Context) {
 }
 
 // DownloadFile 下载文件
+// @Summary 下载文件
+// @Description 下载指定文件
+// @Tags Files
+// @Produce octet-stream
+// @Param nodeId path string true "节点ID"
+// @Success 200 {file} file
+// @Failure 400 {object} map[string]string
+// @Failure 404 {object} map[string]string
+// @Router /api/files/download/{nodeId} [get]
 func (h *Handler) DownloadFile(c *gin.Context) {
 	tenantID := c.GetString("tenant_id")
 	nodeID := c.Param("nodeId")
@@ -442,6 +577,15 @@ func (h *Handler) DownloadFile(c *gin.Context) {
 }
 
 // GetPreview 获取文件预览
+// @Summary 获取文件预览
+// @Description 获取文件预览信息
+// @Tags Files
+// @Produce json
+// @Param nodeId path string true "节点ID"
+// @Success 200 {object} map[string]any
+// @Failure 400 {object} map[string]string
+// @Failure 404 {object} map[string]string
+// @Router /api/files/preview/{nodeId} [get]
 func (h *Handler) GetPreview(c *gin.Context) {
 	tenantID := c.GetString("tenant_id")
 	nodeID := c.Param("nodeId")
@@ -459,6 +603,15 @@ func (h *Handler) GetPreview(c *gin.Context) {
 }
 
 // ListUploads 列出上传记录
+// @Summary 列出上传记录
+// @Description 获取上传记录列表
+// @Tags Files
+// @Produce json
+// @Param limit query int false "数量限制"
+// @Param offset query int false "偏移量"
+// @Success 200 {object} map[string]any
+// @Failure 500 {object} map[string]string
+// @Router /api/files/uploads [get]
 func (h *Handler) ListUploads(c *gin.Context) {
 	tenantID := c.GetString("tenant_id")
 	limit := 20
@@ -488,6 +641,14 @@ func (h *Handler) ListUploads(c *gin.Context) {
 }
 
 // DeleteUpload 删除上传文件
+// @Summary 删除上传文件
+// @Description 删除指定的上传文件
+// @Tags Files
+// @Produce json
+// @Param uploadId path string true "上传ID"
+// @Success 200 {object} map[string]any
+// @Failure 400 {object} map[string]string
+// @Router /api/files/uploads/{uploadId} [delete]
 func (h *Handler) DeleteUpload(c *gin.Context) {
 	tenantID := c.GetString("tenant_id")
 	uploadID := c.Param("uploadId")
@@ -502,3 +663,4 @@ func (h *Handler) DeleteUpload(c *gin.Context) {
 	}
 	c.JSON(http.StatusOK, response.APIResponse{Success: true, Message: "删除成功"})
 }
+

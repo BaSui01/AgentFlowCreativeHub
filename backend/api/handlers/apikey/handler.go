@@ -28,7 +28,17 @@ func getUserContext(c *gin.Context) (tenantID, userID string, ok bool) {
 }
 
 // CreateAPIKey 创建 API Key
-// POST /api/apikeys
+// @Summary 创建 API Key
+// @Description 创建新的 API Key
+// @Tags APIKey
+// @Accept json
+// @Produce json
+// @Param request body auth.CreateAPIKeyRequest true "API Key 信息"
+// @Success 201 {object} map[string]any
+// @Failure 400 {object} map[string]string
+// @Failure 401 {object} map[string]string
+// @Failure 500 {object} map[string]string
+// @Router /api/apikeys [post]
 func (h *Handler) CreateAPIKey(c *gin.Context) {
 	var req auth.CreateAPIKeyRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -58,7 +68,14 @@ func (h *Handler) CreateAPIKey(c *gin.Context) {
 }
 
 // ListAPIKeys 列出 API Keys
-// GET /api/apikeys
+// @Summary 列出 API Keys
+// @Description 获取用户的 API Key 列表
+// @Tags APIKey
+// @Produce json
+// @Success 200 {object} map[string]any
+// @Failure 401 {object} map[string]string
+// @Failure 500 {object} map[string]string
+// @Router /api/apikeys [get]
 func (h *Handler) ListAPIKeys(c *gin.Context) {
 	tenantID, _, ok := getUserContext(c)
 	if !ok {
@@ -79,7 +96,15 @@ func (h *Handler) ListAPIKeys(c *gin.Context) {
 }
 
 // RevokeAPIKey 撤销 API Key
-// POST /api/apikeys/:id/revoke
+// @Summary 撤销 API Key
+// @Description 撤销指定的 API Key（禁用但不删除）
+// @Tags APIKey
+// @Produce json
+// @Param id path string true "API Key ID"
+// @Success 200 {object} map[string]string
+// @Failure 404 {object} map[string]string
+// @Failure 500 {object} map[string]string
+// @Router /api/apikeys/{id}/revoke [post]
 func (h *Handler) RevokeAPIKey(c *gin.Context) {
 	tenantID, userID, ok := getUserContext(c)
 	if !ok {
@@ -101,7 +126,15 @@ func (h *Handler) RevokeAPIKey(c *gin.Context) {
 }
 
 // DeleteAPIKey 删除 API Key
-// DELETE /api/apikeys/:id
+// @Summary 删除 API Key
+// @Description 永久删除指定的 API Key
+// @Tags APIKey
+// @Produce json
+// @Param id path string true "API Key ID"
+// @Success 200 {object} map[string]string
+// @Failure 404 {object} map[string]string
+// @Failure 500 {object} map[string]string
+// @Router /api/apikeys/{id} [delete]
 func (h *Handler) DeleteAPIKey(c *gin.Context) {
 	tenantID, _, ok := getUserContext(c)
 	if !ok {

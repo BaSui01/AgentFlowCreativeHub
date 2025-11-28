@@ -31,7 +31,16 @@ func getUserContext(c *gin.Context) (tenantID, userID string, ok bool) {
 // ========== 套餐管理 ==========
 
 // CreatePlan 创建套餐
-// POST /api/subscription/plans
+// @Summary 创建订阅套餐
+// @Description 创建新的订阅套餐（管理员）
+// @Tags Subscription
+// @Accept json
+// @Produce json
+// @Param request body subscription.CreatePlanRequest true "套餐信息"
+// @Success 201 {object} map[string]any
+// @Failure 400 {object} map[string]string
+// @Failure 500 {object} map[string]string
+// @Router /api/subscription/plans [post]
 func (h *Handler) CreatePlan(c *gin.Context) {
 	var req subscription.CreatePlanRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -55,7 +64,14 @@ func (h *Handler) CreatePlan(c *gin.Context) {
 }
 
 // ListPlans 列出套餐
-// GET /api/subscription/plans
+// @Summary 获取套餐列表
+// @Description 获取所有可用的订阅套餐
+// @Tags Subscription
+// @Produce json
+// @Param includeGlobal query bool false "是否包含全局套餐"
+// @Success 200 {object} map[string]any
+// @Failure 500 {object} map[string]string
+// @Router /api/subscription/plans [get]
 func (h *Handler) ListPlans(c *gin.Context) {
 	tenantID, _, ok := getUserContext(c)
 	if !ok {
@@ -77,7 +93,15 @@ func (h *Handler) ListPlans(c *gin.Context) {
 }
 
 // GetPlan 获取套餐详情
-// GET /api/subscription/plans/:id
+// @Summary 获取套餐详情
+// @Description 根据ID获取套餐详细信息
+// @Tags Subscription
+// @Produce json
+// @Param id path string true "套餐ID"
+// @Success 200 {object} map[string]any
+// @Failure 404 {object} map[string]string
+// @Failure 500 {object} map[string]string
+// @Router /api/subscription/plans/{id} [get]
 func (h *Handler) GetPlan(c *gin.Context) {
 	planID := c.Param("id")
 	plan, err := h.service.GetPlan(c.Request.Context(), planID)
@@ -94,7 +118,17 @@ func (h *Handler) GetPlan(c *gin.Context) {
 }
 
 // UpdatePlan 更新套餐
-// PUT /api/subscription/plans/:id
+// @Summary 更新套餐
+// @Description 更新订阅套餐信息（管理员）
+// @Tags Subscription
+// @Accept json
+// @Produce json
+// @Param id path string true "套餐ID"
+// @Param request body map[string]any true "更新字段"
+// @Success 200 {object} map[string]string
+// @Failure 404 {object} map[string]string
+// @Failure 500 {object} map[string]string
+// @Router /api/subscription/plans/{id} [put]
 func (h *Handler) UpdatePlan(c *gin.Context) {
 	planID := c.Param("id")
 	var updates map[string]interface{}
@@ -116,7 +150,14 @@ func (h *Handler) UpdatePlan(c *gin.Context) {
 }
 
 // DeletePlan 删除套餐
-// DELETE /api/subscription/plans/:id
+// @Summary 删除套餐
+// @Description 删除订阅套餐（管理员）
+// @Tags Subscription
+// @Produce json
+// @Param id path string true "套餐ID"
+// @Success 200 {object} map[string]string
+// @Failure 500 {object} map[string]string
+// @Router /api/subscription/plans/{id} [delete]
 func (h *Handler) DeletePlan(c *gin.Context) {
 	planID := c.Param("id")
 	if err := h.service.DeletePlan(c.Request.Context(), planID); err != nil {
@@ -130,7 +171,17 @@ func (h *Handler) DeletePlan(c *gin.Context) {
 // ========== 订阅管理 ==========
 
 // Subscribe 订阅套餐
-// POST /api/subscription/subscribe
+// @Summary 订阅套餐
+// @Description 用户订阅指定套餐
+// @Tags Subscription
+// @Accept json
+// @Produce json
+// @Param request body subscription.SubscribeRequest true "订阅请求"
+// @Success 201 {object} map[string]any
+// @Failure 400 {object} map[string]string
+// @Failure 404 {object} map[string]string
+// @Failure 409 {object} map[string]string
+// @Router /api/subscription/subscribe [post]
 func (h *Handler) Subscribe(c *gin.Context) {
 	var req subscription.SubscribeRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -166,7 +217,13 @@ func (h *Handler) Subscribe(c *gin.Context) {
 }
 
 // GetCurrentSubscription 获取当前订阅
-// GET /api/subscription/current
+// @Summary 获取当前订阅
+// @Description 获取当前用户的订阅信息
+// @Tags Subscription
+// @Produce json
+// @Success 200 {object} map[string]any
+// @Failure 500 {object} map[string]string
+// @Router /api/subscription/current [get]
 func (h *Handler) GetCurrentSubscription(c *gin.Context) {
 	tenantID, userID, ok := getUserContext(c)
 	if !ok {
@@ -196,7 +253,15 @@ func (h *Handler) GetCurrentSubscription(c *gin.Context) {
 }
 
 // GetUserSubscription 获取指定用户订阅（管理员）
-// GET /api/subscription/users/:userId
+// @Summary 获取用户订阅
+// @Description 获取指定用户的订阅信息（管理员）
+// @Tags Subscription
+// @Produce json
+// @Param userId path string true "用户ID"
+// @Success 200 {object} map[string]any
+// @Failure 404 {object} map[string]string
+// @Failure 500 {object} map[string]string
+// @Router /api/subscription/users/{userId} [get]
 func (h *Handler) GetUserSubscription(c *gin.Context) {
 	tenantID, _, ok := getUserContext(c)
 	if !ok {
@@ -223,7 +288,14 @@ func (h *Handler) GetUserSubscription(c *gin.Context) {
 }
 
 // ListUserSubscriptions 获取用户订阅历史
-// GET /api/subscription/history
+// @Summary 获取订阅历史
+// @Description 获取用户的订阅历史记录
+// @Tags Subscription
+// @Produce json
+// @Param userId query string false "用户ID（可选，默认当前用户）"
+// @Success 200 {object} map[string]any
+// @Failure 500 {object} map[string]string
+// @Router /api/subscription/history [get]
 func (h *Handler) ListUserSubscriptions(c *gin.Context) {
 	tenantID, userID, ok := getUserContext(c)
 	if !ok {
@@ -245,7 +317,16 @@ func (h *Handler) ListUserSubscriptions(c *gin.Context) {
 }
 
 // CancelSubscription 取消订阅
-// POST /api/subscription/cancel
+// @Summary 取消订阅
+// @Description 取消当前订阅
+// @Tags Subscription
+// @Accept json
+// @Produce json
+// @Param request body subscription.CancelRequest true "取消请求"
+// @Success 200 {object} map[string]string
+// @Failure 404 {object} map[string]string
+// @Failure 500 {object} map[string]string
+// @Router /api/subscription/cancel [post]
 func (h *Handler) CancelSubscription(c *gin.Context) {
 	var req subscription.CancelRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -277,7 +358,15 @@ func (h *Handler) CancelSubscription(c *gin.Context) {
 }
 
 // RenewSubscription 续订
-// POST /api/subscription/renew
+// @Summary 续订订阅
+// @Description 续订当前订阅
+// @Tags Subscription
+// @Accept json
+// @Produce json
+// @Param request body map[string]any true "续订请求"
+// @Success 200 {object} map[string]any
+// @Failure 500 {object} map[string]string
+// @Router /api/subscription/renew [post]
 func (h *Handler) RenewSubscription(c *gin.Context) {
 	var req struct {
 		SubscriptionID string                    `json:"subscriptionId" binding:"required"`
@@ -298,7 +387,15 @@ func (h *Handler) RenewSubscription(c *gin.Context) {
 }
 
 // ChangePlan 更换套餐
-// POST /api/subscription/change-plan
+// @Summary 更换套餐
+// @Description 更换订阅套餐
+// @Tags Subscription
+// @Accept json
+// @Produce json
+// @Param request body map[string]any true "更换请求"
+// @Success 200 {object} map[string]any
+// @Failure 500 {object} map[string]string
+// @Router /api/subscription/change-plan [post]
 func (h *Handler) ChangePlan(c *gin.Context) {
 	var req struct {
 		SubscriptionID string `json:"subscriptionId" binding:"required"`
@@ -321,7 +418,16 @@ func (h *Handler) ChangePlan(c *gin.Context) {
 // ========== 试用管理 ==========
 
 // StartTrial 开始试用
-// POST /api/subscription/trial/start
+// @Summary 开始试用
+// @Description 开始套餐试用
+// @Tags Subscription
+// @Accept json
+// @Produce json
+// @Param request body map[string]any true "试用请求"
+// @Success 201 {object} map[string]any
+// @Failure 404 {object} map[string]string
+// @Failure 409 {object} map[string]string
+// @Router /api/subscription/trial/start [post]
 func (h *Handler) StartTrial(c *gin.Context) {
 	var req struct {
 		PlanID string `json:"planId" binding:"required"`
@@ -354,7 +460,15 @@ func (h *Handler) StartTrial(c *gin.Context) {
 }
 
 // ConvertTrial 试用转正
-// POST /api/subscription/trial/convert
+// @Summary 试用转正
+// @Description 将试用订阅转为正式订阅
+// @Tags Subscription
+// @Accept json
+// @Produce json
+// @Param request body map[string]any true "转正请求"
+// @Success 200 {object} map[string]any
+// @Failure 500 {object} map[string]string
+// @Router /api/subscription/trial/convert [post]
 func (h *Handler) ConvertTrial(c *gin.Context) {
 	var req struct {
 		SubscriptionID string                    `json:"subscriptionId" binding:"required"`
@@ -378,7 +492,13 @@ func (h *Handler) ConvertTrial(c *gin.Context) {
 // ========== 统计 ==========
 
 // GetStats 获取订阅统计
-// GET /api/subscription/stats
+// @Summary 获取订阅统计
+// @Description 获取租户订阅统计数据（管理员）
+// @Tags Subscription
+// @Produce json
+// @Success 200 {object} map[string]any
+// @Failure 500 {object} map[string]string
+// @Router /api/subscription/stats [get]
 func (h *Handler) GetStats(c *gin.Context) {
 	tenantID, _, ok := getUserContext(c)
 	if !ok {
@@ -396,7 +516,14 @@ func (h *Handler) GetStats(c *gin.Context) {
 }
 
 // CheckExpiring 检查即将到期订阅
-// GET /api/subscription/expiring
+// @Summary 检查即将到期订阅
+// @Description 获取即将到期的订阅列表（管理员）
+// @Tags Subscription
+// @Produce json
+// @Param days query int false "提前天数(3/7/14/30)"
+// @Success 200 {object} map[string]any
+// @Failure 500 {object} map[string]string
+// @Router /api/subscription/expiring [get]
 func (h *Handler) CheckExpiring(c *gin.Context) {
 	tenantID, _, ok := getUserContext(c)
 	if !ok {
@@ -428,3 +555,4 @@ func (h *Handler) CheckExpiring(c *gin.Context) {
 		"daysAhead":     days,
 	})
 }
+

@@ -50,3 +50,13 @@ type ErrorResponse struct {
 	Code    string `json:"code,omitempty"`
 	Message string `json:"message"`
 }
+
+// Response 是 APIResponse 的别名，用于 Swagger 文档兼容。
+type Response = APIResponse
+
+// PagedResponse 分页响应结构，包含数据列表与分页信息。
+type PagedResponse struct {
+	Success    bool        `json:"success"`
+	Data       interface{} `json:"data"`
+	Pagination PaginationMeta `json:"pagination"`
+}

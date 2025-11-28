@@ -327,3 +327,111 @@ func (h *TemplateHandler) ValidateWorkflowDefinition(c *gin.Context) {
 		"message": "工作流定义有效",
 	})
 }
+
+// UpdateWorkflowTemplate 更新工作流模板
+// @Summary 更新工作流模板
+// @Description 更新指定的工作流模板配置
+// @Tags Workflows
+// @Security BearerAuth
+// @Accept json
+// @Produce json
+// @Param id path string true "模板ID"
+// @Param request body UpdateWorkflowTemplateRequest true "更新内容"
+// @Success 200 {object} map[string]any
+// @Failure 400 {object} map[string]string
+// @Failure 404 {object} map[string]string
+// @Router /api/workflows/templates/{id} [put]
+func (h *TemplateHandler) UpdateWorkflowTemplate(c *gin.Context) {
+	tenantID := c.GetString("tenant_id")
+	templateID := c.Param("id")
+
+	var tmpl workflow.WorkflowTemplate
+	if err := h.db.WithContext(c.Request.Context()).
+		Where("id = ? AND (tenant_id = ? OR tenant_id IS NULL)", templateID, tenantID).
+		First(&tmpl).Error; err != nil {
+		if err == gorm.ErrRecordNotFound {
+			c.JSON(http.StatusNotFound, gin.H{"error": "模板不存在"})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	// 系统模板不可修改
+	if tmpl.IsSystem {
+		c.JSON(http.StatusForbidden, gin.H{"error": "系统模板不可修改"})
+		return
+	}
+
+	var req UpdateWorkflowTemplateRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "请求参数错误: " + err.Error()})
+		return
+	}
+
+	updates := map[string]interface{}{}
+	if req.Name != nil {
+		updates["name"] = *req.Name
+	}
+	if req.Description != nil {
+		updates["description"] = *req.Description
+	}
+	if req.Category != nil {
+		updates["category"] = *req.Category
+	}
+	if req.Definition != nil {
+		updates["definition"] = req.Definition
+	}
+	if req.IsPublic != nil {
+		updates["is_public"] = *req.IsPublic
+	}
+
+	if err := h.db.WithContext(c.Request.Context()).Model(&tmpl).Updates(updates).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "更新模板失败: " + err.Error()})
+		return
+	}
+
+	h.db.First(&tmpl, "id = ?", templateID)
+	c.JSON(http.StatusOK, gin.H{"message": "模板更新成功", "template": tmpl})
+}
+
+// DeleteWorkflowTemplate 删除工作流模板
+// @Summary 删除工作流模板
+// @Description 删除指定的工作流模板
+// @Tags Workflows
+// @Security BearerAuth
+// @Produce json
+// @Param id path string true "模板ID"
+// @Success 200 {object} map[string]any
+// @Failure 403 {object} map[string]string
+// @Failure 404 {object} map[string]string
+// @Router /api/workflows/templates/{id} [delete]
+func (h *TemplateHandler) DeleteWorkflowTemplate(c *gin.Context) {
+	tenantID := c.GetString("tenant_id")
+	templateID := c.Param("id")
+
+	var tmpl workflow.WorkflowTemplate
+	if err := h.db.WithContext(c.Request.Context()).
+		Where("id = ? AND tenant_id = ?", templateID, tenantID).
+		First(&tmpl).Error; err != nil {
+		if err == gorm.ErrRecordNotFound {
+			c.JSON(http.StatusNotFound, gin.H{"error": "模板不存在"})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	// 系统模板不可删除
+	if tmpl.IsSystem {
+		c.JSON(http.StatusForbidden, gin.H{"error": "系统模板不可删除"})
+		return
+	}
+
+	if err := h.db.WithContext(c.Request.Context()).Delete(&tmpl).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "删除模板失败"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"message": "模板删除成功"})
+}

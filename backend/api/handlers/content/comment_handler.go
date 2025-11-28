@@ -66,8 +66,52 @@ func (h *Handler) CreateComment(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"comment": comment})
 }
 
+// DeleteComment 删除评论
+// @Summary 删除评论
+// @Description 删除指定的评论（仅作者或管理员可删除）
+// @Tags Content
+// @Security BearerAuth
+// @Produce json
+// @Param id path string true "作品ID"
+// @Param commentId path string true "评论ID"
+// @Success 200 {object} map[string]any
+// @Failure 403 {object} map[string]string
+// @Failure 404 {object} map[string]string
+// @Router /api/content/works/{id}/comments/{commentId} [delete]
+func (h *Handler) DeleteComment(c *gin.Context) {
+	tenantID, userID, ok := getUserContext(c)
+	if !ok {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "未认证"})
+		return
+	}
+	
+	commentID := c.Param("commentId")
+	
+	if err := h.service.DeleteComment(c.Request.Context(), tenantID, userID, commentID); err != nil {
+		if err.Error() == "评论不存在" {
+			c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
+			return
+		}
+		if err.Error() == "无权删除此评论" {
+			c.JSON(http.StatusForbidden, gin.H{"error": err.Error()})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	
+	c.JSON(http.StatusOK, gin.H{"message": "评论删除成功"})
+}
+
 // ToggleLike 点赞/取消点赞作品
-// POST /api/content/works/:id/like
+// @Summary 点赞/取消点赞作品
+// @Description 对作品进行点赞或取消点赞操作
+// @Tags Content
+// @Security BearerAuth
+// @Produce json
+// @Param id path string true "作品ID"
+// @Success 200 {object} map[string]any
+// @Router /api/content/works/{id}/like [post]
 func (h *Handler) ToggleLike(c *gin.Context) {
 	tenantID, userID, ok := getUserContext(c)
 	if !ok {

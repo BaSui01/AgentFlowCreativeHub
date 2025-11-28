@@ -119,7 +119,14 @@ func defaultIfEmpty(list []string, def []string) []string {
 func normalizeRedisConfig(cfg config.RedisConfig) config.RedisConfig {
 	resolved := cfg
 	resolved.Host = strings.TrimSpace(resolved.Host)
+	resolved.Mode = strings.TrimSpace(strings.ToLower(resolved.Mode))
 
+	// 默认模式为 standalone
+	if resolved.Mode == "" {
+		resolved.Mode = "standalone"
+	}
+
+	// 单节点模式配置
 	if resolved.Host == "" {
 		if addr := strings.TrimSpace(os.Getenv("REDIS_ADDR")); addr != "" {
 			host, port := parseRedisAddr(addr)
@@ -139,7 +146,41 @@ func normalizeRedisConfig(cfg config.RedisConfig) config.RedisConfig {
 		resolved.Port = 6379
 	}
 
+	// 哨兵模式：从环境变量解析地址列表
+	if resolved.Mode == "sentinel" && len(resolved.SentinelAddrs) == 0 {
+		if addrsStr := strings.TrimSpace(os.Getenv("APP_REDIS_SENTINEL_ADDRS")); addrsStr != "" {
+			resolved.SentinelAddrs = parseAddrList(addrsStr)
+		}
+	}
+
+	// 集群模式：从环境变量解析地址列表
+	if resolved.Mode == "cluster" && len(resolved.ClusterAddrs) == 0 {
+		if addrsStr := strings.TrimSpace(os.Getenv("APP_REDIS_CLUSTER_ADDRS")); addrsStr != "" {
+			resolved.ClusterAddrs = parseAddrList(addrsStr)
+		}
+	}
+
+	// 连接池默认值
+	if resolved.PoolSize <= 0 {
+		resolved.PoolSize = 10
+	}
+	if resolved.MinIdleConns <= 0 {
+		resolved.MinIdleConns = 5
+	}
+
 	return resolved
+}
+
+// parseAddrList 解析逗号分隔的地址列表
+func parseAddrList(addrsStr string) []string {
+	parts := strings.Split(addrsStr, ",")
+	addrs := make([]string, 0, len(parts))
+	for _, p := range parts {
+		if addr := strings.TrimSpace(p); addr != "" {
+			addrs = append(addrs, addr)
+		}
+	}
+	return addrs
 }
 
 // parseRedisAddr 解析 Redis 地址

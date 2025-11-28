@@ -39,6 +39,16 @@ type executeCommandDTO struct {
 }
 
 // Execute 提交命令
+// @Summary 执行命令
+// @Description 提交AI命令执行请求
+// @Tags Commands
+// @Accept json
+// @Produce json
+// @Param request body executeCommandDTO true "命令信息"
+// @Success 202 {object} map[string]any
+// @Failure 400 {object} map[string]string
+// @Failure 500 {object} map[string]string
+// @Router /api/commands [post]
 func (h *Handler) Execute(c *gin.Context) {
 	if h.service == nil {
 		c.JSON(http.StatusServiceUnavailable, response.ErrorResponse{Success: false, Message: "命令服务未启用"})
@@ -94,6 +104,15 @@ func (h *Handler) Execute(c *gin.Context) {
 }
 
 // Get 查询命令
+// @Summary 获取命令详情
+// @Description 查询命令执行状态和结果
+// @Tags Commands
+// @Produce json
+// @Param id path string true "命令ID"
+// @Success 200 {object} map[string]any
+// @Failure 404 {object} map[string]string
+// @Failure 500 {object} map[string]string
+// @Router /api/commands/{id} [get]
 func (h *Handler) Get(c *gin.Context) {
 	if h.service == nil {
 		c.JSON(http.StatusServiceUnavailable, response.ErrorResponse{Success: false, Message: "命令服务未启用"})
@@ -114,6 +133,17 @@ func (h *Handler) Get(c *gin.Context) {
 }
 
 // List 返回命令列表（带筛选与分页）。
+// @Summary 获取命令列表
+// @Description 获取命令执行历史列表
+// @Tags Commands
+// @Produce json
+// @Param page query int false "页码"
+// @Param pageSize query int false "每页数量"
+// @Param status query string false "状态过滤"
+// @Param agentId query string false "Agent过滤"
+// @Success 200 {object} map[string]any
+// @Failure 500 {object} map[string]string
+// @Router /api/commands [get]
 func (h *Handler) List(c *gin.Context) {
 	if h.service == nil {
 		c.JSON(http.StatusServiceUnavailable, response.ErrorResponse{Success: false, Message: "命令服务未启用"})
