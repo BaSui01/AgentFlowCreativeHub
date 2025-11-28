@@ -1,0 +1,46 @@
+# Prometheus 配置文件
+# AgentFlowCreativeHub 监控系统
+
+global:
+  scrape_interval: 15s # 每15秒抓取一次指标
+  evaluation_interval: 15s # 每15秒评估一次告警规则
+  external_labels:
+    cluster: 'agentflow'
+    environment: 'production'
+
+# 告警规则文件
+rule_files:
+  - 'alerts.yml'
+
+# 抓取配置
+scrape_configs:
+  # AgentFlow Backend 应用
+  - job_name: 'agentflow-backend'
+    static_configs:
+      - targets: ['host.docker.internal:7000'] # Docker 访问宿主机
+        labels:
+          service: 'backend'
+          app: 'agentflow'
+    metrics_path: '/metrics'
+    scrape_interval: 15s
+    scrape_timeout: 10s
+
+  # Prometheus 自身监控
+  - job_name: 'prometheus'
+    static_configs:
+      - targets: ['localhost:9090']
+        labels:
+          service: 'prometheus'
+
+# 告警管理器配置（可选）
+# alerting:
+#   alertmanagers:
+#     - static_configs:
+#         - targets:
+#             - alertmanager:9093
+
+# 存储配置
+storage:
+  tsdb:
+    retention.time: 30d # 保留30天数据
+    retention.size: 10GB # 最大10GB
