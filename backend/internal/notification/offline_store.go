@@ -59,13 +59,13 @@ func (s *MemoryOfflineStore) Drain(_ context.Context, tenantID, userID string) (
 
 // RedisOfflineStore 基于 Redis 的实现
 type RedisOfflineStore struct {
-	client *redis.Client
+	client redis.UniversalClient
 	limit  int
 	ttl    time.Duration
 }
 
 // NewRedisOfflineStore 创建 redis 存储
-func NewRedisOfflineStore(client *redis.Client, limit int, ttl time.Duration) *RedisOfflineStore {
+func NewRedisOfflineStore(client redis.UniversalClient, limit int, ttl time.Duration) *RedisOfflineStore {
 	if limit <= 0 {
 		limit = 100
 	}

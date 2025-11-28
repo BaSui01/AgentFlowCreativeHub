@@ -727,7 +727,9 @@ func (s *Service) ListTemplates(ctx context.Context, tenantID, genre string) ([]
 // CreateTemplate 创建模板
 func (s *Service) CreateTemplate(ctx context.Context, tenantID string, template *SettingTemplate) error {
 	template.ID = uuid.New().String()
-	template.TenantID = tenantID
+	if tenantID != "" {
+		template.TenantID = &tenantID
+	}
 	template.IsBuiltin = false
 	return s.db.WithContext(ctx).Create(template).Error
 }

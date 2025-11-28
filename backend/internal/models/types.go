@@ -95,23 +95,36 @@ type ListAuditLogsRequest struct {
 
 // CreateKnowledgeBaseRequest 创建知识库请求
 type CreateKnowledgeBaseRequest struct {
-	TenantID      string            `json:"tenantId" binding:"required"`
-	Name          string            `json:"name" binding:"required"`
-	Description   string            `json:"description"`
-	EmbeddingModel string           `json:"embeddingModel" binding:"required"`
-	ChunkSize     int               `json:"chunkSize"`
-	ChunkOverlap  int               `json:"chunkOverlap"`
-	Metadata      map[string]string `json:"metadata"`
+	TenantID       string            `json:"tenantId" binding:"required"`
+	Name           string            `json:"name" binding:"required"`
+	Description    string            `json:"description"`
+	EmbeddingModel string            `json:"embeddingModel" binding:"required"`
+	ChunkSize      int               `json:"chunkSize"`
+	ChunkOverlap   int               `json:"chunkOverlap"`
+	// 访问控制
+	AccessLevel string `json:"accessLevel"` // private, shared, public
+	Visibility  string `json:"visibility"`  // personal, team, tenant
+	// 配置
+	Settings map[string]any `json:"settings"`
+	// 元数据
+	Metadata  map[string]string `json:"metadata"`
+	CreatedBy string            `json:"createdBy"`
 }
 
 // UpdateKnowledgeBaseRequest 更新知识库请求
 type UpdateKnowledgeBaseRequest struct {
-	Name          string            `json:"name"`
-	Description   string            `json:"description"`
-	ChunkSize     int               `json:"chunkSize"`
-	ChunkOverlap  int               `json:"chunkOverlap"`
-	Metadata      map[string]string `json:"metadata"`
-	Status        string            `json:"status"`
+	Name         string `json:"name"`
+	Description  string `json:"description"`
+	ChunkSize    int    `json:"chunkSize"`
+	ChunkOverlap int    `json:"chunkOverlap"`
+	// 访问控制
+	AccessLevel string `json:"accessLevel"`
+	Visibility  string `json:"visibility"`
+	// 配置
+	Settings map[string]any `json:"settings"`
+	// 元数据
+	Metadata map[string]string `json:"metadata"`
+	Status   string            `json:"status"`
 }
 
 // ============================================================================

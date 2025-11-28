@@ -14,7 +14,7 @@ import (
 
 // EmbeddingCache 向量缓存服务
 type EmbeddingCache struct {
-	redis       *redis.Client
+	redis       redis.UniversalClient
 	localCache  sync.Map // 本地 L1 缓存
 	prefix      string
 	ttl         time.Duration
@@ -31,7 +31,7 @@ type CachedEmbedding struct {
 }
 
 // NewEmbeddingCache 创建向量缓存
-func NewEmbeddingCache(redisClient *redis.Client, prefix string, ttl time.Duration) *EmbeddingCache {
+func NewEmbeddingCache(redisClient redis.UniversalClient, prefix string, ttl time.Duration) *EmbeddingCache {
 	if prefix == "" {
 		prefix = "emb:"
 	}

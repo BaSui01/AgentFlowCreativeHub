@@ -337,6 +337,98 @@ func (s *ModelQuotaService) checkAndResetQuota(quota *ModelQuota) {
 	}
 }
 
+// ListQuotas 获取配额列表
+func (s *ModelQuotaService) ListQuotas(ctx context.Context, tenantID, modelID string) ([]*ModelQuota, error) {
+	query := s.db.WithContext(ctx).Model(&ModelQuota{}).Where("tenant_id = ?", tenantID)
+	if modelID != "" {
+		query = query.Where("model_id = ?", modelID)
+	}
+
+	var quotas []*ModelQuota
+	if err := query.Order("created_at DESC").Find(&quotas).Error; err != nil {
+		return nil, fmt.Errorf("查询配额列表失败: %w", err)
+	}
+
+	return quotas, nil
+}
+
+// GetQuotaByID 根据ID获取配额
+func (s *ModelQuotaService) GetQuotaByID(ctx context.Context, tenantID, quotaID string) (*ModelQuota, error) {
+	var quota ModelQuota
+	if err := s.db.WithContext(ctx).
+		Where("id = ? AND tenant_id = ?", quotaID, tenantID).
+		First(&quota).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, ErrModelQuotaNotFound
+		}
+		return nil, fmt.Errorf("查询配额失败: %w", err)
+	}
+	return &quota, nil
+}
+
+// UpdateQuota 更新配额
+func (s *ModelQuotaService) UpdateQuota(ctx context.Context, tenantID, quotaID string, limits *QuotaLimits) (*ModelQuota, error) {
+	var quota ModelQuota
+	if err := s.db.WithContext(ctx).
+		Where("id = ? AND tenant_id = ?", quotaID, tenantID).
+		First(&quota).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, ErrModelQuotaNotFound
+		}
+		return nil, fmt.Errorf("查询配额失败: %w", err)
+	}
+
+	updates := map[string]interface{}{
+		"updated_at": time.Now().UTC(),
+	}
+
+	if limits.MaxTokensPerDay >= 0 {
+		updates["max_tokens_per_day"] = limits.MaxTokensPerDay
+	}
+	if limits.MaxTokensPerMonth >= 0 {
+		updates["max_tokens_per_month"] = limits.MaxTokensPerMonth
+	}
+	if limits.MaxCallsPerDay >= 0 {
+		updates["max_calls_per_day"] = limits.MaxCallsPerDay
+	}
+	if limits.MaxCallsPerMonth >= 0 {
+		updates["max_calls_per_month"] = limits.MaxCallsPerMonth
+	}
+	if limits.MaxCostPerDay >= 0 {
+		updates["max_cost_per_day"] = limits.MaxCostPerDay
+	}
+	if limits.MaxCostPerMonth >= 0 {
+		updates["max_cost_per_month"] = limits.MaxCostPerMonth
+	}
+
+	if err := s.db.WithContext(ctx).Model(&quota).Updates(updates).Error; err != nil {
+		return nil, fmt.Errorf("更新配额失败: %w", err)
+	}
+
+	// 重新查询
+	if err := s.db.WithContext(ctx).First(&quota, "id = ?", quotaID).Error; err != nil {
+		return nil, err
+	}
+
+	return &quota, nil
+}
+
+// DeleteQuota 删除配额
+func (s *ModelQuotaService) DeleteQuota(ctx context.Context, tenantID, quotaID string) error {
+	result := s.db.WithContext(ctx).
+		Where("id = ? AND tenant_id = ?", quotaID, tenantID).
+		Delete(&ModelQuota{})
+
+	if result.Error != nil {
+		return fmt.Errorf("删除配额失败: %w", result.Error)
+	}
+	if result.RowsAffected == 0 {
+		return ErrModelQuotaNotFound
+	}
+
+	return nil
+}
+
 // EstimateCost 预估成本
 func (s *ModelQuotaService) EstimateCost(ctx context.Context, modelID string, promptTokens, completionTokens int) (float64, error) {
 	var model Model

@@ -113,7 +113,7 @@ type RagQueryLog struct {
 // Tool represents a logical tool that can be invoked by agents.
 type Tool struct {
 	ID       string `json:"id" gorm:"primaryKey;type:uuid"`
-	TenantID string `json:"tenantId" gorm:"type:uuid;index"` // NULL 表示系统工具
+	TenantID string `json:"tenantId" gorm:"type:uuid;index"` // 空表示系统工具
 
 	Name        string `json:"name" gorm:"size:255;not null"`
 	Category    string `json:"category" gorm:"size:64;not null"`

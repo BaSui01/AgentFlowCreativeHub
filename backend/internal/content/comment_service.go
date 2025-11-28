@@ -85,6 +85,33 @@ func (s *Service) CreateComment(ctx context.Context, tenantID, userID string, re
 	return comment, nil
 }
 
+// DeleteComment 删除评论
+func (s *Service) DeleteComment(ctx context.Context, tenantID, userID, commentID string) error {
+	// 查找评论
+	var comment WorkComment
+	if err := s.db.WithContext(ctx).
+		Where("id = ? AND tenant_id = ? AND deleted_at IS NULL", commentID, tenantID).
+		First(&comment).Error; err != nil {
+		if err == gorm.ErrRecordNotFound {
+			return errors.New("评论不存在")
+		}
+		return err
+	}
+
+	// 检查权限：只有评论作者可以删除
+	// TODO: 添加管理员权限检查
+	if comment.UserID != userID {
+		return errors.New("无权删除此评论")
+	}
+
+	// 软删除评论
+	if err := s.db.WithContext(ctx).Delete(&comment).Error; err != nil {
+		return err
+	}
+
+	return nil
+}
+
 // ToggleLike 点赞/取消点赞作品
 func (s *Service) ToggleLike(ctx context.Context, tenantID, userID, workID string) (*LikeResponse, error) {
 	// 验证作品是否存在

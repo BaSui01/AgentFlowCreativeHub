@@ -127,10 +127,19 @@ type CreateWorkflowRequest struct {
 	TenantID    string
 	Name        string
 	Description string
+	Category    string // 分类
 	Definition  WorkflowDefinition
+	Variables   map[string]any // 变量
 	Version     string
 	Visibility  string
-	CreatedBy   string
+	// 调度配置
+	Schedule  string // cron 表达式
+	NextRunAt *time.Time
+	// 状态
+	Status string // draft, active, archived
+	// 元数据
+	Metadata  map[string]any
+	CreatedBy string
 }
 
 // CreateWorkflow 创建工作流
@@ -155,21 +164,37 @@ func (s *WorkflowService) CreateWorkflow(ctx context.Context, req *CreateWorkflo
 		return nil, fmt.Errorf("工作流定义无效: %w", err)
 	}
 
+	// 设置默认状态
+	status := req.Status
+	if status == "" {
+		status = "draft"
+	}
+
 	// 创建工作流
 	workflow := &Workflow{
-		ID:                uuid.New().String(),
-		TenantID:          req.TenantID,
-		Name:              req.Name,
-		Description:       req.Description,
-		Definition:        req.Definition,
-		Version:           req.Version,
-		Visibility:        req.Visibility,
+		ID:          uuid.New().String(),
+		TenantID:    req.TenantID,
+		Name:        req.Name,
+		Description: req.Description,
+		Category:    req.Category,
+		Definition:  req.Definition,
+		Variables:   req.Variables,
+		Version:     req.Version,
+		Visibility:  req.Visibility,
+		// 调度配置
+		Schedule:  req.Schedule,
+		NextRunAt: req.NextRunAt,
+		// 状态
+		Status: status,
+		// 统计
 		TotalExecutions:   0,
 		SuccessExecutions: 0,
 		FailedExecutions:  0,
-		CreatedBy:         req.CreatedBy,
-		CreatedAt:         time.Now().UTC(),
-		UpdatedAt:         time.Now().UTC(),
+		// 元数据
+		Metadata:  req.Metadata,
+		CreatedBy: req.CreatedBy,
+		CreatedAt: time.Now().UTC(),
+		UpdatedAt: time.Now().UTC(),
 	}
 
 	if err := s.db.WithContext(ctx).Create(workflow).Error; err != nil {
@@ -183,9 +208,18 @@ func (s *WorkflowService) CreateWorkflow(ctx context.Context, req *CreateWorkflo
 type UpdateWorkflowRequest struct {
 	Name        *string
 	Description *string
+	Category    *string
 	Definition  *WorkflowDefinition
+	Variables   map[string]any
 	Version     *string
 	Visibility  *string
+	// 调度配置
+	Schedule  *string
+	NextRunAt *time.Time
+	// 状态
+	Status *string
+	// 元数据
+	Metadata map[string]any
 }
 
 // UpdateWorkflow 更新工作流
@@ -216,14 +250,35 @@ func (s *WorkflowService) UpdateWorkflow(ctx context.Context, tenantID, workflow
 	if req.Description != nil {
 		updates["description"] = *req.Description
 	}
+	if req.Category != nil {
+		updates["category"] = *req.Category
+	}
 	if req.Definition != nil {
 		updates["definition"] = *req.Definition
+	}
+	if req.Variables != nil {
+		updates["variables"] = req.Variables
 	}
 	if req.Version != nil {
 		updates["version"] = *req.Version
 	}
 	if req.Visibility != nil {
 		updates["visibility"] = *req.Visibility
+	}
+	// 调度配置
+	if req.Schedule != nil {
+		updates["schedule"] = *req.Schedule
+	}
+	if req.NextRunAt != nil {
+		updates["next_run_at"] = *req.NextRunAt
+	}
+	// 状态
+	if req.Status != nil {
+		updates["status"] = *req.Status
+	}
+	// 元数据
+	if req.Metadata != nil {
+		updates["metadata"] = req.Metadata
 	}
 	updates["updated_at"] = time.Now().UTC()
 

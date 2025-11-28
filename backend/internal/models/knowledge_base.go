@@ -11,20 +11,27 @@ import (
 
 // KnowledgeBase 知识库
 type KnowledgeBase struct {
-	ID          string    `gorm:"type:uuid;primaryKey" json:"id"`
-	TenantID    string    `gorm:"type:uuid;not null;index:idx_kb_tenant" json:"tenant_id"`
-	Name        string    `gorm:"type:varchar(200);not null" json:"name"`
-	Description string    `gorm:"type:text" json:"description"`
-	Type        string    `gorm:"type:varchar(50);not null" json:"type"` // document, url, api, database
-	Status      string    `gorm:"type:varchar(50);not null;default:'active'" json:"status"` // active, inactive
-	Config      types.JSONMap   `gorm:"type:jsonb" json:"config"` // 配置信息（如分块大小、重叠等）
-	Metadata    types.JSONMap   `gorm:"type:jsonb" json:"metadata"` // 元数据
-	DocCount    int       `gorm:"type:int;default:0" json:"doc_count"` // 文档数量
-	ChunkCount  int       `gorm:"type:int;default:0" json:"chunk_count"` // 分块数量
-	CreatedBy   string    `gorm:"type:uuid" json:"created_by"`
-	UpdatedBy   string    `gorm:"type:uuid" json:"updated_by"`
-	CreatedAt   time.Time `gorm:"not null" json:"created_at"`
-	UpdatedAt   time.Time `gorm:"not null" json:"updated_at"`
+	ID          string `gorm:"type:uuid;primaryKey" json:"id"`
+	TenantID    string `gorm:"type:uuid;not null;index:idx_kb_tenant" json:"tenant_id"`
+	Name        string `gorm:"type:varchar(200);not null" json:"name"`
+	Description string `gorm:"type:text" json:"description"`
+	Type        string `gorm:"type:varchar(50);not null" json:"type"`                      // document, url, api, database
+	Status      string `gorm:"type:varchar(50);not null;default:'active'" json:"status"`  // active, inactive
+	// 访问控制
+	AccessLevel string `gorm:"type:varchar(50);default:'private'" json:"access_level"` // private, shared, public
+	Visibility  string `gorm:"type:varchar(50);default:'personal'" json:"visibility"`  // personal, team, tenant
+	// 配置
+	Config   types.JSONMap `gorm:"type:jsonb" json:"config"`   // 配置信息（如分块大小、重叠等）
+	Settings types.JSONMap `gorm:"type:jsonb" json:"settings"` // 高级设置
+	Metadata types.JSONMap `gorm:"type:jsonb" json:"metadata"` // 元数据
+	// 统计
+	DocCount   int `gorm:"type:int;default:0" json:"doc_count"`   // 文档数量
+	ChunkCount int `gorm:"type:int;default:0" json:"chunk_count"` // 分块数量
+	// 操作人
+	CreatedBy string    `gorm:"type:uuid" json:"created_by"`
+	UpdatedBy string    `gorm:"type:uuid" json:"updated_by"`
+	CreatedAt time.Time `gorm:"not null" json:"created_at"`
+	UpdatedAt time.Time `gorm:"not null" json:"updated_at"`
 }
 
 // BeforeCreate GORM 钩子：创建前设置 ID

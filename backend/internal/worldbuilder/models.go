@@ -197,7 +197,7 @@ const (
 // SettingTemplate 设定生成模板
 type SettingTemplate struct {
 	ID          string         `json:"id" gorm:"primaryKey;type:uuid"`
-	TenantID    string         `json:"tenantId" gorm:"type:uuid;index"`   // 空表示系统模板
+	TenantID    *string        `json:"tenantId" gorm:"type:uuid;index"`   // nil 表示系统模板
 	
 	Name        string         `json:"name" gorm:"size:100;not null"`
 	Description string         `json:"description" gorm:"size:500"`

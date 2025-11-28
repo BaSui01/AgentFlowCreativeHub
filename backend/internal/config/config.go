@@ -54,14 +54,31 @@ type DatabaseConfig struct {
 	MaxOpenConns    int    `mapstructure:"max_open_conns"`
 	MaxIdleConns    int    `mapstructure:"max_idle_conns"`
 	ConnMaxLifetime int    `mapstructure:"conn_max_lifetime"` // 秒
+	AutoMigrate     bool   `mapstructure:"auto_migrate"`      // 是否自动迁移表结构
 }
 
 // RedisConfig Redis 配置
 type RedisConfig struct {
+	// 连接模式: standalone(单节点), sentinel(哨兵), cluster(集群)
+	Mode string `mapstructure:"mode"`
+
+	// 单节点模式配置
 	Host     string `mapstructure:"host"`
 	Port     int    `mapstructure:"port"`
 	Password string `mapstructure:"password"`
 	DB       int    `mapstructure:"db"`
+
+	// 哨兵模式配置
+	MasterName       string   `mapstructure:"master_name"`        // 主节点名称
+	SentinelAddrs    []string `mapstructure:"sentinel_addrs"`     // 哨兵地址列表
+	SentinelPassword string   `mapstructure:"sentinel_password"`  // 哨兵密码（可选）
+
+	// 集群模式配置
+	ClusterAddrs []string `mapstructure:"cluster_addrs"` // 集群节点地址列表
+
+	// 通用配置
+	PoolSize     int `mapstructure:"pool_size"`      // 连接池大小
+	MinIdleConns int `mapstructure:"min_idle_conns"` // 最小空闲连接数
 }
 
 // LogConfig 日志配置

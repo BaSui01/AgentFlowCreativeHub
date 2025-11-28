@@ -42,14 +42,14 @@ type JWTKey struct {
 type JWTKeyManager struct {
 	mu          sync.RWMutex
 	config      *KeyRotationConfig
-	redisClient *redis.Client
+	redisClient redis.UniversalClient
 	currentKey  *JWTKey
 	previousKey *JWTKey // 旧密钥 (用于验证过渡期的 token)
 	redisPrefix string
 }
 
 // NewJWTKeyManager 创建密钥管理器
-func NewJWTKeyManager(redisClient *redis.Client, config *KeyRotationConfig) *JWTKeyManager {
+func NewJWTKeyManager(redisClient redis.UniversalClient, config *KeyRotationConfig) *JWTKeyManager {
 	if config == nil {
 		config = DefaultKeyRotationConfig()
 	}
@@ -287,7 +287,7 @@ type JWTServiceWithRotation struct {
 }
 
 // NewJWTServiceWithRotation 创建支持密钥轮换的 JWT 服务
-func NewJWTServiceWithRotation(issuer string, redisClient *redis.Client, config *KeyRotationConfig) (*JWTServiceWithRotation, error) {
+func NewJWTServiceWithRotation(issuer string, redisClient redis.UniversalClient, config *KeyRotationConfig) (*JWTServiceWithRotation, error) {
 	keyManager := NewJWTKeyManager(redisClient, config)
 
 	// 初始化密钥管理器

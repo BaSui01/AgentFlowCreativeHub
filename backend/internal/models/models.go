@@ -48,6 +48,9 @@ type Model struct {
 	RateLimitPerMin int     `json:"rateLimitPerMin" gorm:"default:0"`
 	LatencySloMs    int     `json:"latencySloMs" gorm:"default:0"`
 
+	// 会员等级权限控制
+	AllowedTiers []string `json:"allowedTiers" gorm:"type:jsonb;serializer:json"` // ["free", "basic", "pro", "enterprise"]，空数组表示所有等级可用
+
 	// 状态
 	Status              string         `json:"status" gorm:"size:50;not null;default:active"` // active, deprecated, disabled
 	HealthStatus        string         `json:"healthStatus" gorm:"size:32;default:unknown"`

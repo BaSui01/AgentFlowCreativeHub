@@ -4,8 +4,8 @@ import "time"
 
 // WorkflowTemplate 工作流模板
 type WorkflowTemplate struct {
-	ID          string `json:"id" gorm:"primaryKey;type:uuid"`
-	TenantID    string `json:"tenantId" gorm:"type:uuid;index"` // 租户级模板（为空表示系统模板）
+	ID          string  `json:"id" gorm:"primaryKey;type:uuid"`
+	TenantID    *string `json:"tenantId" gorm:"type:uuid;index"` // 租户级模板（nil 表示系统模板）
 	
 	// 模板信息
 	Name        string `json:"name" gorm:"size:255;not null"`

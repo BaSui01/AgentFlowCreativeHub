@@ -11,7 +11,7 @@ import (
 
 // RedisSessionStore Redis 会话存储
 type RedisSessionStore struct {
-	client     *redis.Client
+	client     redis.UniversalClient
 	prefix     string
 	defaultTTL time.Duration
 }
@@ -32,7 +32,7 @@ type SessionData struct {
 }
 
 // NewRedisSessionStore 创建 Redis 会话存储
-func NewRedisSessionStore(client *redis.Client, prefix string, defaultTTL time.Duration) *RedisSessionStore {
+func NewRedisSessionStore(client redis.UniversalClient, prefix string, defaultTTL time.Duration) *RedisSessionStore {
 	if prefix == "" {
 		prefix = "session:"
 	}

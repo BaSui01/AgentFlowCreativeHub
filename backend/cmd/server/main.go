@@ -31,11 +31,13 @@ import (
 	"backend/internal/config"
 	"backend/internal/infra"
 	"backend/internal/logger"
+	"backend/internal/tenant"
 	"backend/internal/worker"
 
 	"github.com/gin-gonic/gin"
 	"github.com/joho/godotenv"
 	"go.uber.org/zap"
+	"gorm.io/gorm"
 )
 
 // @title AgentFlowCreativeHub API
@@ -85,11 +87,13 @@ func main() {
 	}
 	defer infra.CloseDatabase()
 
-	// 4. 执行数据库迁移（开发环境）
-	if env == "dev" {
+	// 4. 执行数据库迁移（根据配置）
+	if cfg.Database.AutoMigrate {
 		if err := runMigrations(db); err != nil {
 			logger.Fatal("数据库迁移失败", zap.Error(err))
 		}
+	} else {
+		logger.Info("跳过自动迁移（配置已禁用）")
 	}
 
 	// 5. 设置 Gin 模式
@@ -193,9 +197,27 @@ func collectEnvCandidates() []string {
 
 // runMigrations 执行数据库迁移
 func runMigrations(db interface{}) error {
-	logger.Info("跳过自动迁移（使用 SQL 迁移脚本）")
-	// 注意：我们使用 db/migrations/*.sql 脚本进行迁移
-	// 生产环境应使用迁移工具（如 golang-migrate）
+	gormDB, ok := db.(*gorm.DB)
+	if !ok {
+		logger.Info("跳过自动迁移（非 GORM 数据库）")
+		return nil
+	}
+
+	logger.Info("执行核心表自动迁移...")
+
+	// 迁移核心 tenant 相关表
+	if err := gormDB.AutoMigrate(
+		&tenant.Tenant{},
+		&tenant.User{},
+		&tenant.Role{},
+		&tenant.Permission{},
+		&tenant.RolePermission{},
+		&tenant.UserRole{},
+	); err != nil {
+		return fmt.Errorf("迁移 tenant 表失败: %w", err)
+	}
+
+	logger.Info("核心表迁移完成")
 	return nil
 }
 

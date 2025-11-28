@@ -128,6 +128,72 @@ func (s *ModelCredentialService) ListCredentials(ctx context.Context, req *ListC
 	return creds, nil
 }
 
+// UpdateModelCredentialRequest 更新凭证请求
+type UpdateModelCredentialRequest struct {
+	TenantID     string
+	CredentialID string
+	Name         string
+	APIKey       string
+	BaseURL      string
+	ExtraHeaders map[string]any
+	Status       string
+}
+
+// UpdateCredential 更新凭证
+func (s *ModelCredentialService) UpdateCredential(ctx context.Context, req *UpdateModelCredentialRequest) (*ModelCredential, error) {
+	if req == nil {
+		return nil, fmt.Errorf("请求参数不能为空")
+	}
+	if req.TenantID == "" || req.CredentialID == "" {
+		return nil, fmt.Errorf("tenant_id 与 credential_id 必填")
+	}
+
+	var cred ModelCredential
+	if err := s.db.WithContext(ctx).
+		Where("id = ? AND tenant_id = ?", req.CredentialID, req.TenantID).
+		First(&cred).Error; err != nil {
+		if err == gorm.ErrRecordNotFound {
+			return nil, fmt.Errorf("凭证不存在")
+		}
+		return nil, fmt.Errorf("查询凭证失败: %w", err)
+	}
+
+	updates := map[string]interface{}{
+		"updated_at": time.Now().UTC(),
+	}
+
+	if req.Name != "" {
+		updates["name"] = req.Name
+	}
+	if req.APIKey != "" {
+		ciphertext, err := security.EncryptSecret(req.APIKey)
+		if err != nil {
+			return nil, err
+		}
+		updates["api_key_ciphertext"] = ciphertext
+	}
+	if req.BaseURL != "" {
+		updates["base_url"] = req.BaseURL
+	}
+	if req.ExtraHeaders != nil {
+		updates["extra_headers"] = req.ExtraHeaders
+	}
+	if req.Status != "" {
+		updates["status"] = req.Status
+	}
+
+	if err := s.db.WithContext(ctx).Model(&cred).Updates(updates).Error; err != nil {
+		return nil, fmt.Errorf("更新凭证失败: %w", err)
+	}
+
+	// 重新查询获取最新数据
+	if err := s.db.WithContext(ctx).First(&cred, "id = ?", req.CredentialID).Error; err != nil {
+		return nil, err
+	}
+
+	return sanitizeCredential(&cred), nil
+}
+
 // DeleteCredential 删除凭证
 func (s *ModelCredentialService) DeleteCredential(ctx context.Context, tenantID, credentialID string) error {
 	var cred ModelCredential

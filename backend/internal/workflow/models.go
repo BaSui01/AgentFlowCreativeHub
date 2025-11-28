@@ -134,9 +134,11 @@ type Workflow struct {
 	// 工作流信息
 	Name        string `json:"name" gorm:"size:255;not null"`
 	Description string `json:"description" gorm:"type:text"`
+	Category    string `json:"category" gorm:"size:100"` // 分类
 
 	// 定义（结构化）
 	Definition WorkflowDefinition `json:"definition" gorm:"type:jsonb;not null;serializer:json"`
+	Variables  map[string]any     `json:"variables" gorm:"type:jsonb;serializer:json"` // 变量
 
 	// 版本
 	Version string `json:"version" gorm:"size:50;not null"`
@@ -144,10 +146,20 @@ type Workflow struct {
 	// 可见性
 	Visibility string `json:"visibility" gorm:"size:50;not null;default:personal"` // personal, tenant, public
 
+	// 调度配置
+	Schedule  string     `json:"schedule" gorm:"size:100"`  // cron 表达式
+	NextRunAt *time.Time `json:"nextRunAt" gorm:"index"`    // 下次执行时间
+
+	// 状态
+	Status string `json:"status" gorm:"size:50;default:draft"` // draft, active, archived
+
 	// 统计（通过触发器自动维护）
 	TotalExecutions   int `json:"totalExecutions" gorm:"column:execution_count;default:0"`
 	SuccessExecutions int `json:"successExecutions" gorm:"column:success_count;default:0"`
 	FailedExecutions  int `json:"failedExecutions" gorm:"column:failure_count;default:0"`
+
+	// 元数据
+	Metadata map[string]any `json:"metadata" gorm:"type:jsonb;serializer:json"`
 
 	// 创建人
 	CreatedBy string `json:"createdBy" gorm:"size:100"`

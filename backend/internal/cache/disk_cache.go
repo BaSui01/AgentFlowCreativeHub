@@ -11,6 +11,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"os"
+	"path/filepath"
 	"sync"
 	"time"
 
@@ -56,6 +58,14 @@ type CacheEntry struct {
 
 // NewDiskCache 创建硬盘缓存实例
 func NewDiskCache(dbPath string, ttl time.Duration, maxSizeGB int) (*DiskCache, error) {
+	// 确保目录存在
+	if dbPath != ":memory:" && dbPath != "" {
+		dir := filepath.Dir(dbPath)
+		if err := os.MkdirAll(dir, 0755); err != nil {
+			return nil, fmt.Errorf("创建缓存目录失败: %w", err)
+		}
+	}
+
 	db, err := sql.Open("sqlite", dbPath)
 	if err != nil {
 		return nil, fmt.Errorf("打开数据库失败: %w", err)

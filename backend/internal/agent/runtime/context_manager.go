@@ -57,11 +57,11 @@ func (s *InMemorySessionStore) Delete(ctx context.Context, sessionID string) err
 
 // RedisSessionStore Redis 会话存储
 type RedisSessionStore struct {
-	client *redis.Client
+	client redis.UniversalClient
 	ttl    time.Duration
 }
 
-func NewRedisSessionStore(client *redis.Client, ttl time.Duration) *RedisSessionStore {
+func NewRedisSessionStore(client redis.UniversalClient, ttl time.Duration) *RedisSessionStore {
 	return &RedisSessionStore{
 		client: client,
 		ttl:    ttl,

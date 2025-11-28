@@ -3,15 +3,58 @@ package memo
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"sort"
 	"strings"
 	"time"
 )
 
+// 错误定义
+var (
+	ErrMemoNotFound = errors.New("memo not found")
+)
+
 // MemoService 备忘录服务
 type MemoService struct {
 	store MemoStore
+}
+
+// CreateMemoRequest 创建备忘录请求
+type CreateMemoRequest struct {
+	Title    string         `json:"title" binding:"required"`
+	Content  string         `json:"content"`
+	Category string         `json:"category,omitempty"`
+	Tags     []string       `json:"tags,omitempty"`
+	Priority MemoPriority   `json:"priority,omitempty"`
+	DueDate  *time.Time     `json:"due_date,omitempty"`
+	Reminder *time.Time     `json:"reminder,omitempty"`
+	Color    string         `json:"color,omitempty"`
+	Metadata map[string]any `json:"metadata,omitempty"`
+}
+
+// UpdateMemoRequest 更新备忘录请求
+type UpdateMemoRequest struct {
+	Title    *string        `json:"title,omitempty"`
+	Content  *string        `json:"content,omitempty"`
+	Category *string        `json:"category,omitempty"`
+	Tags     []string       `json:"tags,omitempty"`
+	Priority *MemoPriority  `json:"priority,omitempty"`
+	DueDate  *time.Time     `json:"due_date,omitempty"`
+	Reminder *time.Time     `json:"reminder,omitempty"`
+	Color    *string        `json:"color,omitempty"`
+	Metadata map[string]any `json:"metadata,omitempty"`
+}
+
+// SearchRequest 搜索请求
+type SearchRequest struct {
+	Query    string       `json:"query" binding:"required"`
+	Category string       `json:"category,omitempty"`
+	Tags     []string     `json:"tags,omitempty"`
+	Status   MemoStatus   `json:"status,omitempty"`
+	Priority MemoPriority `json:"priority,omitempty"`
+	Limit    int          `json:"limit,omitempty"`
+	Offset   int          `json:"offset,omitempty"`
 }
 
 // MemoStore 备忘录存储接口

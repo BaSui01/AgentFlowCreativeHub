@@ -118,19 +118,39 @@ func (s *AgentService) GetAgentConfig(ctx context.Context, tenantID, agentID str
 
 // CreateAgentConfigRequest 创建 Agent 配置请求
 type CreateAgentConfigRequest struct {
-	TenantID          string
-	AgentType         string
-	Name              string
-	Description       string
+	TenantID    string
+	AgentType   string
+	Name        string
+	Description string
+	// 模型配置
 	ModelID           string
 	SecondaryModelID  string
 	FallbackStrategy  string
 	FallbackTimeoutMs int
-	PromptTemplateID  string
-	SystemPrompt      string
-	Temperature       float64
-	MaxTokens         int
-	ExtraConfig       map[string]any
+	// 任务专用模型
+	ToolModelID     string
+	CreativeModelID string
+	AnalysisModelID string
+	SummaryModelID  string
+	ModelRouting    map[string]string
+	// Prompt
+	PromptTemplateID string
+	SystemPrompt     string
+	// 参数
+	Temperature float64
+	MaxTokens   int
+	// 工具配置
+	Tools       []string
+	AutoToolUse bool
+	// RAG 配置
+	KnowledgeBaseIDs []string
+	RAGEnabled       bool
+	RAGTopK          int
+	RAGMinScore      float64
+	// 状态
+	Status string
+	// 扩展
+	ExtraConfig map[string]any
 }
 
 // CreateAgentConfig 创建 Agent 配置
@@ -185,24 +205,60 @@ func (s *AgentService) CreateAgentConfig(ctx context.Context, req *CreateAgentCo
 		req.FallbackTimeoutMs = 0
 	}
 
+	// 设置默认状态
+	status := req.Status
+	if status == "" {
+		status = "active"
+	}
+
+	// 设置 RAG 默认值
+	ragTopK := req.RAGTopK
+	if ragTopK == 0 {
+		ragTopK = 3
+	}
+	ragMinScore := req.RAGMinScore
+	if ragMinScore == 0 {
+		ragMinScore = 0.7
+	}
+
 	// 创建 Agent 配置
 	agent := &AgentConfig{
-		ID:                uuid.New().String(),
-		TenantID:          req.TenantID,
-		AgentType:         req.AgentType,
-		Name:              req.Name,
-		Description:       req.Description,
+		ID:          uuid.New().String(),
+		TenantID:    req.TenantID,
+		AgentType:   req.AgentType,
+		Name:        req.Name,
+		Description: req.Description,
+		// 模型配置
 		PrimaryModelID:    req.ModelID,
 		SecondaryModelID:  req.SecondaryModelID,
 		FallbackStrategy:  fallbackStrategy,
 		FallbackTimeoutMs: req.FallbackTimeoutMs,
-		PromptTemplateID:  req.PromptTemplateID,
-		SystemPrompt:      req.SystemPrompt,
-		Temperature:       req.Temperature,
-		MaxTokens:         req.MaxTokens,
-		ExtraConfig:       req.ExtraConfig,
-		CreatedAt:         time.Now().UTC(),
-		UpdatedAt:         time.Now().UTC(),
+		// 任务专用模型
+		ToolModelID:     req.ToolModelID,
+		CreativeModelID: req.CreativeModelID,
+		AnalysisModelID: req.AnalysisModelID,
+		SummaryModelID:  req.SummaryModelID,
+		ModelRouting:    req.ModelRouting,
+		// Prompt
+		PromptTemplateID: req.PromptTemplateID,
+		SystemPrompt:     req.SystemPrompt,
+		// 参数
+		Temperature: req.Temperature,
+		MaxTokens:   req.MaxTokens,
+		// 工具配置
+		AllowedTools: req.Tools,
+		AutoToolUse:  req.AutoToolUse,
+		// RAG 配置
+		KnowledgeBaseID: getFirstOrEmpty(req.KnowledgeBaseIDs),
+		RAGEnabled:      req.RAGEnabled,
+		RAGTopK:         ragTopK,
+		RAGMinScore:     ragMinScore,
+		// 状态
+		Status: status,
+		// 扩展
+		ExtraConfig: req.ExtraConfig,
+		CreatedAt:   time.Now().UTC(),
+		UpdatedAt:   time.Now().UTC(),
 	}
 
 	if err := s.db.WithContext(ctx).Create(agent).Error; err != nil {
@@ -213,19 +269,47 @@ func (s *AgentService) CreateAgentConfig(ctx context.Context, req *CreateAgentCo
 	return agent, nil
 }
 
+// getFirstOrEmpty 获取切片的第一个元素，如果为空则返回空字符串
+func getFirstOrEmpty(s []string) string {
+	if len(s) > 0 {
+		return s[0]
+	}
+	return ""
+}
+
 // UpdateAgentConfigRequest 更新 Agent 配置请求
 type UpdateAgentConfigRequest struct {
-	Name              *string
-	Description       *string
+	Name        *string
+	Description *string
+	// 模型配置
 	ModelID           *string
 	SecondaryModelID  *string
 	FallbackStrategy  *string
 	FallbackTimeoutMs *int
-	PromptTemplateID  *string
-	SystemPrompt      *string
-	Temperature       *float64
-	MaxTokens         *int
-	ExtraConfig       map[string]any
+	// 任务专用模型
+	ToolModelID     *string
+	CreativeModelID *string
+	AnalysisModelID *string
+	SummaryModelID  *string
+	ModelRouting    map[string]string
+	// Prompt
+	PromptTemplateID *string
+	SystemPrompt     *string
+	// 参数
+	Temperature *float64
+	MaxTokens   *int
+	// 工具配置
+	Tools       []string
+	AutoToolUse *bool
+	// RAG 配置
+	KnowledgeBaseIDs []string
+	RAGEnabled       *bool
+	RAGTopK          *int
+	RAGMinScore      *float64
+	// 状态
+	Status *string
+	// 扩展
+	ExtraConfig map[string]any
 }
 
 // UpdateAgentConfig 更新 Agent 配置
@@ -256,6 +340,22 @@ func (s *AgentService) UpdateAgentConfig(ctx context.Context, tenantID, agentID 
 	if req.FallbackTimeoutMs != nil {
 		updates["fallback_timeout_ms"] = *req.FallbackTimeoutMs
 	}
+	// 任务专用模型
+	if req.ToolModelID != nil {
+		updates["tool_model_id"] = *req.ToolModelID
+	}
+	if req.CreativeModelID != nil {
+		updates["creative_model_id"] = *req.CreativeModelID
+	}
+	if req.AnalysisModelID != nil {
+		updates["analysis_model_id"] = *req.AnalysisModelID
+	}
+	if req.SummaryModelID != nil {
+		updates["summary_model_id"] = *req.SummaryModelID
+	}
+	if req.ModelRouting != nil {
+		updates["model_routing"] = req.ModelRouting
+	}
 	if req.PromptTemplateID != nil {
 		updates["prompt_template_id"] = *req.PromptTemplateID
 	}
@@ -268,6 +368,31 @@ func (s *AgentService) UpdateAgentConfig(ctx context.Context, tenantID, agentID 
 	if req.MaxTokens != nil {
 		updates["max_tokens"] = *req.MaxTokens
 	}
+	// 工具配置
+	if req.Tools != nil {
+		updates["allowed_tools"] = req.Tools
+	}
+	if req.AutoToolUse != nil {
+		updates["auto_tool_use"] = *req.AutoToolUse
+	}
+	// RAG 配置
+	if req.KnowledgeBaseIDs != nil && len(req.KnowledgeBaseIDs) > 0 {
+		updates["knowledge_base_id"] = req.KnowledgeBaseIDs[0]
+	}
+	if req.RAGEnabled != nil {
+		updates["rag_enabled"] = *req.RAGEnabled
+	}
+	if req.RAGTopK != nil {
+		updates["rag_top_k"] = *req.RAGTopK
+	}
+	if req.RAGMinScore != nil {
+		updates["rag_min_score"] = *req.RAGMinScore
+	}
+	// 状态
+	if req.Status != nil {
+		updates["status"] = *req.Status
+	}
+	// 扩展配置
 	if req.ExtraConfig != nil {
 		updates["extra_config"] = req.ExtraConfig
 	}

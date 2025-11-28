@@ -15,11 +15,11 @@ type JWTService struct {
 	issuer        string
 	accessExpiry  time.Duration // 访问令牌过期时间（默认 2 小时）
 	refreshExpiry time.Duration // 刷新令牌过期时间（默认 7 天）
-	redisClient   *redis.Client // Redis 客户端，用于黑名单
+	redisClient   redis.UniversalClient // Redis 客户端，用于黑名单
 }
 
 // NewJWTService 创建 JWT 服务
-func NewJWTService(secretKey, issuer string, redisClient *redis.Client) *JWTService {
+func NewJWTService(secretKey, issuer string, redisClient redis.UniversalClient) *JWTService {
 	return &JWTService{
 		secretKey:     []byte(secretKey),
 		issuer:        issuer,

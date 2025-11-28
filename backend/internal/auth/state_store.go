@@ -66,12 +66,12 @@ func (s *MemoryStateStore) Consume(ctx context.Context, state string) (string, e
 
 // RedisStateStore Redis 实现
 type RedisStateStore struct {
-	client *redis.Client
+	client redis.UniversalClient
 	prefix string
 }
 
 // NewRedisStateStore 创建 Redis state 存储
-func NewRedisStateStore(client *redis.Client) *RedisStateStore {
+func NewRedisStateStore(client redis.UniversalClient) *RedisStateStore {
 	return &RedisStateStore{
 		client: client,
 		prefix: "oauth2:state:",
