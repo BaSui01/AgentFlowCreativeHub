@@ -3,3 +3,9 @@
 .factory/
 # docs/ - 允许提交项目文档
 node_modules/
+.snow/
+dist/
+build/
+
+# Cache files
+backend/data/cache/
