@@ -284,3 +284,221 @@ func (h *Handler) DiffVersions(c *gin.Context) {
 	}
 	c.JSON(http.StatusOK, response.APIResponse{Success: true, Data: result})
 }
+
+// ============================================
+// 文件上传下载 API
+// ============================================
+
+type initiateUploadDTO struct {
+	FileName  string  `json:"fileName" binding:"required"`
+	MimeType  string  `json:"mimeType"`
+	FileSize  int64   `json:"fileSize" binding:"required"`
+	ChunkSize int64   `json:"chunkSize"`
+	ParentID  *string `json:"parentId"`
+}
+
+// InitiateUpload 初始化分片上传
+func (h *Handler) InitiateUpload(c *gin.Context) {
+	tenantID := c.GetString("tenant_id")
+	userID := c.GetString("user_id")
+	var dto initiateUploadDTO
+	if err := c.ShouldBindJSON(&dto); err != nil {
+		c.JSON(http.StatusBadRequest, response.ErrorResponse{Success: false, Message: "参数错误: " + err.Error()})
+		return
+	}
+	result, err := h.svc.InitiateUpload(c.Request.Context(), &workspaceSvc.InitiateUploadRequest{
+		TenantID:  tenantID,
+		FileName:  dto.FileName,
+		MimeType:  dto.MimeType,
+		FileSize:  dto.FileSize,
+		ChunkSize: dto.ChunkSize,
+		ParentID:  dto.ParentID,
+		UserID:    userID,
+	})
+	if err != nil {
+		c.JSON(http.StatusBadRequest, response.ErrorResponse{Success: false, Message: err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, response.APIResponse{Success: true, Data: result})
+}
+
+// UploadChunk 上传分片
+func (h *Handler) UploadChunk(c *gin.Context) {
+	tenantID := c.GetString("tenant_id")
+	userID := c.GetString("user_id")
+	uploadID := c.Param("uploadId")
+	if uploadID == "" {
+		c.JSON(http.StatusBadRequest, response.ErrorResponse{Success: false, Message: "缺少上传ID"})
+		return
+	}
+
+	chunkIndexStr := c.PostForm("chunkIndex")
+	if chunkIndexStr == "" {
+		c.JSON(http.StatusBadRequest, response.ErrorResponse{Success: false, Message: "缺少分片索引"})
+		return
+	}
+	chunkIndex, err := strconv.Atoi(chunkIndexStr)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, response.ErrorResponse{Success: false, Message: "分片索引无效"})
+		return
+	}
+
+	file, _, err := c.Request.FormFile("chunk")
+	if err != nil {
+		c.JSON(http.StatusBadRequest, response.ErrorResponse{Success: false, Message: "获取文件失败: " + err.Error()})
+		return
+	}
+	defer file.Close()
+
+	if err := h.svc.UploadChunk(c.Request.Context(), &workspaceSvc.UploadChunkRequest{
+		TenantID:   tenantID,
+		UploadID:   uploadID,
+		ChunkIndex: chunkIndex,
+		ChunkData:  file,
+		UserID:     userID,
+	}); err != nil {
+		c.JSON(http.StatusBadRequest, response.ErrorResponse{Success: false, Message: err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, response.APIResponse{Success: true, Message: "分片上传成功"})
+}
+
+type completeUploadDTO struct {
+	ParentID *string `json:"parentId"`
+}
+
+// CompleteUpload 完成上传
+func (h *Handler) CompleteUpload(c *gin.Context) {
+	tenantID := c.GetString("tenant_id")
+	userID := c.GetString("user_id")
+	uploadID := c.Param("uploadId")
+	if uploadID == "" {
+		c.JSON(http.StatusBadRequest, response.ErrorResponse{Success: false, Message: "缺少上传ID"})
+		return
+	}
+
+	var dto completeUploadDTO
+	_ = c.ShouldBindJSON(&dto)
+
+	result, err := h.svc.CompleteUpload(c.Request.Context(), tenantID, uploadID, userID, dto.ParentID)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, response.ErrorResponse{Success: false, Message: err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, response.APIResponse{Success: true, Data: result})
+}
+
+// UploadFile 单文件上传（小文件）
+func (h *Handler) UploadFile(c *gin.Context) {
+	tenantID := c.GetString("tenant_id")
+	userID := c.GetString("user_id")
+
+	file, header, err := c.Request.FormFile("file")
+	if err != nil {
+		c.JSON(http.StatusBadRequest, response.ErrorResponse{Success: false, Message: "获取文件失败: " + err.Error()})
+		return
+	}
+	defer file.Close()
+
+	parentID := c.PostForm("parentId")
+	var parentIDPtr *string
+	if parentID != "" {
+		parentIDPtr = &parentID
+	}
+
+	result, err := h.svc.UploadSingleFile(c.Request.Context(), &workspaceSvc.UploadFileRequest{
+		TenantID: tenantID,
+		FileName: header.Filename,
+		MimeType: header.Header.Get("Content-Type"),
+		FileSize: header.Size,
+		ParentID: parentIDPtr,
+		UserID:   userID,
+	}, file)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, response.ErrorResponse{Success: false, Message: err.Error()})
+		return
+	}
+	c.JSON(http.StatusCreated, response.APIResponse{Success: true, Data: result})
+}
+
+// DownloadFile 下载文件
+func (h *Handler) DownloadFile(c *gin.Context) {
+	tenantID := c.GetString("tenant_id")
+	nodeID := c.Param("nodeId")
+	if nodeID == "" {
+		c.JSON(http.StatusBadRequest, response.ErrorResponse{Success: false, Message: "缺少文件ID"})
+		return
+	}
+
+	upload, err := h.svc.GetFileForDownload(c.Request.Context(), tenantID, nodeID)
+	if err != nil {
+		c.JSON(http.StatusNotFound, response.ErrorResponse{Success: false, Message: err.Error()})
+		return
+	}
+
+	c.Header("Content-Disposition", "attachment; filename=\""+upload.OriginalName+"\"")
+	c.Header("Content-Type", upload.MimeType)
+	c.File(upload.StoragePath)
+}
+
+// GetPreview 获取文件预览
+func (h *Handler) GetPreview(c *gin.Context) {
+	tenantID := c.GetString("tenant_id")
+	nodeID := c.Param("nodeId")
+	if nodeID == "" {
+		c.JSON(http.StatusBadRequest, response.ErrorResponse{Success: false, Message: "缺少文件ID"})
+		return
+	}
+
+	preview, err := h.svc.GetFilePreview(c.Request.Context(), tenantID, nodeID)
+	if err != nil {
+		c.JSON(http.StatusNotFound, response.ErrorResponse{Success: false, Message: err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, response.APIResponse{Success: true, Data: preview})
+}
+
+// ListUploads 列出上传记录
+func (h *Handler) ListUploads(c *gin.Context) {
+	tenantID := c.GetString("tenant_id")
+	limit := 20
+	offset := 0
+	if v := c.Query("limit"); v != "" {
+		if parsed, err := strconv.Atoi(v); err == nil {
+			limit = parsed
+		}
+	}
+	if v := c.Query("offset"); v != "" {
+		if parsed, err := strconv.Atoi(v); err == nil {
+			offset = parsed
+		}
+	}
+
+	uploads, total, err := h.svc.ListUploads(c.Request.Context(), tenantID, limit, offset)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, response.ErrorResponse{Success: false, Message: err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, response.APIResponse{Success: true, Data: gin.H{
+		"items": uploads,
+		"total": total,
+		"limit": limit,
+		"offset": offset,
+	}})
+}
+
+// DeleteUpload 删除上传文件
+func (h *Handler) DeleteUpload(c *gin.Context) {
+	tenantID := c.GetString("tenant_id")
+	uploadID := c.Param("uploadId")
+	if uploadID == "" {
+		c.JSON(http.StatusBadRequest, response.ErrorResponse{Success: false, Message: "缺少上传ID"})
+		return
+	}
+
+	if err := h.svc.DeleteUpload(c.Request.Context(), tenantID, uploadID); err != nil {
+		c.JSON(http.StatusBadRequest, response.ErrorResponse{Success: false, Message: err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, response.APIResponse{Success: true, Message: "删除成功"})
+}

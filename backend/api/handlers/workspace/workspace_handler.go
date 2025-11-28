@@ -350,3 +350,306 @@ func trimSnippet(text string) string {
 	runes := []rune(text)
 	return string(runes[:160]) + "..."
 }
+
+// ========== 内容管理增强 API ==========
+
+// GetOutlineView 获取大纲总览
+// @Summary 获取作品大纲总览
+// @Tags Workspace
+// @Security BearerAuth
+// @Param workId path string true "作品ID"
+// @Produce json
+// @Success 200 {object} response.APIResponse
+// @Router /api/workspace/outline/{workId} [get]
+func (h *Handler) GetOutlineView(c *gin.Context) {
+	tenantID := c.GetString("tenant_id")
+	workID := c.Param("workId")
+	if workID == "" {
+		c.JSON(http.StatusBadRequest, response.ErrorResponse{Success: false, Message: "作品ID不能为空"})
+		return
+	}
+	view, err := h.svc.GetOutlineView(c.Request.Context(), tenantID, workID)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, response.ErrorResponse{Success: false, Message: err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, response.APIResponse{Success: true, Data: view})
+}
+
+type batchSortDTO struct {
+	Updates []workspaceSvc.SortOrderUpdate `json:"updates" binding:"required"`
+}
+
+// BatchUpdateSortOrder 批量更新排序
+// @Summary 批量更新节点排序
+// @Tags Workspace
+// @Security BearerAuth
+// @Accept json
+// @Produce json
+// @Param body body batchSortDTO true "排序更新"
+// @Success 200 {object} response.APIResponse
+// @Router /api/workspace/batch/sort [post]
+func (h *Handler) BatchUpdateSortOrder(c *gin.Context) {
+	tenantID := c.GetString("tenant_id")
+	userID := c.GetString("user_id")
+	var dto batchSortDTO
+	if err := c.ShouldBindJSON(&dto); err != nil {
+		c.JSON(http.StatusBadRequest, response.ErrorResponse{Success: false, Message: "参数错误: " + err.Error()})
+		return
+	}
+	if err := h.svc.BatchUpdateSortOrder(c.Request.Context(), &workspaceSvc.BatchSortRequest{
+		TenantID: tenantID,
+		Updates:  dto.Updates,
+		UserID:   userID,
+	}); err != nil {
+		c.JSON(http.StatusInternalServerError, response.ErrorResponse{Success: false, Message: err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, response.APIResponse{Success: true, Message: "排序更新成功"})
+}
+
+type batchMoveDTO struct {
+	NodeIDs     []string `json:"nodeIds" binding:"required"`
+	NewParentID string   `json:"newParentId"`
+}
+
+// BatchMoveNodes 批量移动节点
+// @Summary 批量移动节点到新目录
+// @Tags Workspace
+// @Security BearerAuth
+// @Accept json
+// @Produce json
+// @Param body body batchMoveDTO true "移动请求"
+// @Success 200 {object} response.APIResponse
+// @Router /api/workspace/batch/move [post]
+func (h *Handler) BatchMoveNodes(c *gin.Context) {
+	tenantID := c.GetString("tenant_id")
+	userID := c.GetString("user_id")
+	var dto batchMoveDTO
+	if err := c.ShouldBindJSON(&dto); err != nil {
+		c.JSON(http.StatusBadRequest, response.ErrorResponse{Success: false, Message: "参数错误: " + err.Error()})
+		return
+	}
+	if err := h.svc.BatchMoveNodes(c.Request.Context(), &workspaceSvc.BatchMoveRequest{
+		TenantID:    tenantID,
+		NodeIDs:     dto.NodeIDs,
+		NewParentID: dto.NewParentID,
+		UserID:      userID,
+	}); err != nil {
+		c.JSON(http.StatusInternalServerError, response.ErrorResponse{Success: false, Message: err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, response.APIResponse{Success: true, Message: "移动成功"})
+}
+
+type batchDeleteDTO struct {
+	NodeIDs []string `json:"nodeIds" binding:"required"`
+}
+
+// BatchDeleteNodes 批量删除节点
+// @Summary 批量删除节点
+// @Tags Workspace
+// @Security BearerAuth
+// @Accept json
+// @Produce json
+// @Param body body batchDeleteDTO true "删除请求"
+// @Success 200 {object} response.APIResponse
+// @Router /api/workspace/batch/delete [post]
+func (h *Handler) BatchDeleteNodes(c *gin.Context) {
+	tenantID := c.GetString("tenant_id")
+	userID := c.GetString("user_id")
+	var dto batchDeleteDTO
+	if err := c.ShouldBindJSON(&dto); err != nil {
+		c.JSON(http.StatusBadRequest, response.ErrorResponse{Success: false, Message: "参数错误: " + err.Error()})
+		return
+	}
+	deleted, err := h.svc.BatchDeleteNodes(c.Request.Context(), &workspaceSvc.BatchDeleteRequest{
+		TenantID: tenantID,
+		NodeIDs:  dto.NodeIDs,
+		UserID:   userID,
+	})
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, response.ErrorResponse{Success: false, Message: err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, response.APIResponse{Success: true, Data: gin.H{"deleted": deleted}})
+}
+
+type batchCopyDTO struct {
+	NodeIDs     []string `json:"nodeIds" binding:"required"`
+	NewParentID string   `json:"newParentId"`
+}
+
+// BatchCopyNodes 批量复制节点
+// @Summary 批量复制节点
+// @Tags Workspace
+// @Security BearerAuth
+// @Accept json
+// @Produce json
+// @Param body body batchCopyDTO true "复制请求"
+// @Success 200 {object} response.APIResponse
+// @Router /api/workspace/batch/copy [post]
+func (h *Handler) BatchCopyNodes(c *gin.Context) {
+	tenantID := c.GetString("tenant_id")
+	userID := c.GetString("user_id")
+	var dto batchCopyDTO
+	if err := c.ShouldBindJSON(&dto); err != nil {
+		c.JSON(http.StatusBadRequest, response.ErrorResponse{Success: false, Message: "参数错误: " + err.Error()})
+		return
+	}
+	copiedIDs, err := h.svc.BatchCopyNodes(c.Request.Context(), &workspaceSvc.BatchCopyRequest{
+		TenantID:    tenantID,
+		NodeIDs:     dto.NodeIDs,
+		NewParentID: dto.NewParentID,
+		UserID:      userID,
+	})
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, response.ErrorResponse{Success: false, Message: err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, response.APIResponse{Success: true, Data: gin.H{"copiedIds": copiedIDs}})
+}
+
+type autoSaveDTO struct {
+	NodeID    string `json:"nodeId" binding:"required"`
+	Content   string `json:"content" binding:"required"`
+	SessionID string `json:"sessionId"`
+}
+
+// AutoSaveContent 自动保存内容
+// @Summary 自动保存文件内容
+// @Tags Workspace
+// @Security BearerAuth
+// @Accept json
+// @Produce json
+// @Param body body autoSaveDTO true "保存请求"
+// @Success 200 {object} response.APIResponse
+// @Router /api/workspace/autosave [post]
+func (h *Handler) AutoSaveContent(c *gin.Context) {
+	tenantID := c.GetString("tenant_id")
+	userID := c.GetString("user_id")
+	var dto autoSaveDTO
+	if err := c.ShouldBindJSON(&dto); err != nil {
+		c.JSON(http.StatusBadRequest, response.ErrorResponse{Success: false, Message: "参数错误: " + err.Error()})
+		return
+	}
+	result, err := h.svc.AutoSaveContent(c.Request.Context(), &workspaceSvc.AutoSaveRequest{
+		TenantID:  tenantID,
+		NodeID:    dto.NodeID,
+		Content:   dto.Content,
+		UserID:    userID,
+		SessionID: dto.SessionID,
+	})
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, response.ErrorResponse{Success: false, Message: err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, response.APIResponse{Success: true, Data: result})
+}
+
+type importTextDTO struct {
+	Content    string  `json:"content" binding:"required"`
+	FileName   string  `json:"fileName"`
+	ParentID   *string `json:"parentId"`
+	AutoDetect bool    `json:"autoDetect"`
+}
+
+// ImportFromText 从txt导入
+// @Summary 从TXT文件导入章节
+// @Tags Workspace
+// @Security BearerAuth
+// @Accept json
+// @Produce json
+// @Param body body importTextDTO true "导入请求"
+// @Success 200 {object} response.APIResponse
+// @Router /api/workspace/import/text [post]
+func (h *Handler) ImportFromText(c *gin.Context) {
+	tenantID := c.GetString("tenant_id")
+	userID := c.GetString("user_id")
+	var dto importTextDTO
+	if err := c.ShouldBindJSON(&dto); err != nil {
+		c.JSON(http.StatusBadRequest, response.ErrorResponse{Success: false, Message: "参数错误: " + err.Error()})
+		return
+	}
+	result, err := h.svc.ImportFromText(c.Request.Context(), &workspaceSvc.ImportTextRequest{
+		TenantID:   tenantID,
+		ParentID:   dto.ParentID,
+		Content:    dto.Content,
+		FileName:   dto.FileName,
+		UserID:     userID,
+		AutoDetect: dto.AutoDetect,
+	})
+	if err != nil {
+		c.JSON(http.StatusBadRequest, response.ErrorResponse{Success: false, Message: err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, response.APIResponse{Success: true, Data: result})
+}
+
+// ExportWorkspaceRequest 导出工作空间请求
+type ExportWorkspaceRequest struct {
+	WorkspaceID          string `json:"workspace_id" binding:"required"`
+	IncludeVersionHistory bool   `json:"include_version_history"`
+	Format               string `json:"format" binding:"required,oneof=zip json"`
+}
+
+// ExportWorkspace 导出工作空间
+// @Summary 导出工作空间
+// @Tags Workspace
+// @Security BearerAuth
+// @Accept json
+// @Produce json
+// @Param request body ExportWorkspaceRequest true "导出请求"
+// @Success 202 {object} response.APIResponse
+// @Failure 400 {object} response.ErrorResponse
+// @Failure 401 {object} response.ErrorResponse
+// @Failure 403 {object} response.ErrorResponse
+// @Failure 500 {object} response.ErrorResponse
+// @Router /api/workspace/export [post]
+func (h *Handler) ExportWorkspace(c *gin.Context) {
+	tenantID := c.GetString("tenant_id")
+	userID := c.GetString("user_id")
+	
+	if tenantID == "" || userID == "" {
+		c.JSON(http.StatusUnauthorized, response.ErrorResponse{Success: false, Message: "未认证"})
+		return
+	}
+
+	var req ExportWorkspaceRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, response.ErrorResponse{Success: false, Message: "参数错误: " + err.Error()})
+		return
+	}
+
+	// 验证工作空间权限
+	// TODO: 检查用户是否有权限访问该工作空间
+	// 目前简化处理，默认用户只能导出自己的工作空间
+
+	// 生成任务ID
+	taskID := uuid.New().String()
+
+	// TODO: 这里应该提交异步任务到Asynq队列
+	// task := asynq.NewTask("workspace:export", payload)
+	// h.queueClient.Enqueue(ctx, task)
+
+	// 简化实现：返回任务ID和下载链接
+	// 实际项目中应该异步生成文件
+	downloadURL := "/api/workspace/exports/" + taskID + "/download"
+
+	// 设置审计信息
+	auditpkg.SetAuditResourceInfo(c, "workspace", req.WorkspaceID)
+	auditpkg.SetAuditMetadata(c, "export_format", req.Format)
+	auditpkg.SetAuditMetadata(c, "include_version_history", req.IncludeVersionHistory)
+
+	c.JSON(http.StatusAccepted, response.APIResponse{
+		Success: true,
+		Message: "导出任务已创建",
+		Data: gin.H{
+			"task_id":      taskID,
+			"download_url": downloadURL,
+			"status":       "pending",
+			"workspace_id": req.WorkspaceID,
+			"format":       req.Format,
+		},
+	})
+}

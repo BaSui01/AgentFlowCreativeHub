@@ -24,13 +24,13 @@ type createCredentialRequest struct {
 
 // ModelHandler AI 模型管理 Handler
 type ModelHandler struct {
-	service            models.ModelServiceInterface
-	discoveryService   models.ModelDiscoveryServiceInterface
-	credentialService  models.ModelCredentialServiceInterface
+	service            *models.ModelService
+	discoveryService   *models.ModelDiscoveryService
+	credentialService  *models.ModelCredentialService
 }
 
 // NewModelHandler 创建 ModelHandler 实例
-func NewModelHandler(service models.ModelServiceInterface, discoveryService models.ModelDiscoveryServiceInterface, credentialService models.ModelCredentialServiceInterface) *ModelHandler {
+func NewModelHandler(service *models.ModelService, discoveryService *models.ModelDiscoveryService, credentialService *models.ModelCredentialService) *ModelHandler {
 	return &ModelHandler{
 		service:           service,
 		discoveryService:  discoveryService,
@@ -176,15 +176,18 @@ func (h *ModelHandler) GetModelStats(c *gin.Context) {
 	tenantID := c.GetString("tenant_id")
 	modelID := c.Param("id")
 
-	// 解析时间参数
-	var startTime, endTime time.Time
-	if start := c.Query("start_time"); start != "" {
-		if t, err := time.Parse("2006-01-02", start); err == nil {
+	// 解析时间参数，默认最近30天
+	now := time.Now()
+	startTime := now.AddDate(0, 0, -30)
+	endTime := now
+
+	if st := c.Query("start_time"); st != "" {
+		if t, err := time.Parse("2006-01-02", st); err == nil {
 			startTime = t
 		}
 	}
-	if end := c.Query("end_time"); end != "" {
-		if t, err := time.Parse("2006-01-02", end); err == nil {
+	if et := c.Query("end_time"); et != "" {
+		if t, err := time.Parse("2006-01-02", et); err == nil {
 			endTime = t
 		}
 	}
@@ -205,10 +208,11 @@ func (h *ModelHandler) ListModelCredentials(c *gin.Context) {
 	tenantID := c.GetString("tenant_id")
 	modelID := c.Param("id")
 
-	creds, err := h.credentialService.ListCredentials(c.Request.Context(), &models.ListCredentialsRequest{
+	req := &models.ListCredentialsRequest{
 		TenantID: tenantID,
 		ModelID:  modelID,
-	})
+	}
+	creds, err := h.credentialService.ListCredentials(c.Request.Context(), req)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -221,7 +225,7 @@ func (h *ModelHandler) ListModelCredentials(c *gin.Context) {
 func (h *ModelHandler) CreateModelCredential(c *gin.Context) {
 	tenantID := c.GetString("tenant_id")
 	modelID := c.Param("id")
-	userID := c.GetString("user_id")
+	_ = c.GetString("user_id") // TODO: 用于审计日志
 
 	var body createCredentialRequest
 	if err := c.ShouldBindJSON(&body); err != nil {
@@ -237,7 +241,6 @@ func (h *ModelHandler) CreateModelCredential(c *gin.Context) {
 		APIKey:       body.APIKey,
 		BaseURL:      body.BaseURL,
 		ExtraHeaders: body.ExtraHeaders,
-		CreatedBy:    userID,
 		SetAsDefault: body.SetAsDefault,
 	})
 	if err != nil {
@@ -302,7 +305,7 @@ func (h *ModelHandler) DiscoverModels(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
 		"provider": provider,
 		"count":    count,
-		"message":  "成功同步 " + strconv.Itoa(count) + " 个模型",
+		"message":  "成功发现 " + strconv.Itoa(count) + " 个模型",
 	})
 }
 

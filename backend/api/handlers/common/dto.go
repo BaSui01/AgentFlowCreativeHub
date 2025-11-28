@@ -1,11 +1,33 @@
 package common
 
+import (
+	"net/http"
+
+	"github.com/gin-gonic/gin"
+)
+
 // APIResponse 通用响应结构，用于封装成功或失败结果。
 type APIResponse struct {
 	Success bool        `json:"success"`
 	Message string      `json:"message,omitempty"`
 	Data    interface{} `json:"data,omitempty"`
 	Error   string      `json:"error,omitempty"`
+}
+
+// Success 返回成功响应
+func Success(c *gin.Context, data interface{}) {
+	c.JSON(http.StatusOK, APIResponse{
+		Success: true,
+		Data:    data,
+	})
+}
+
+// Error 返回错误响应
+func Error(c *gin.Context, code int, message string) {
+	c.JSON(code, ErrorResponse{
+		Success: false,
+		Message: message,
+	})
 }
 
 // PaginationMeta 分页元信息。

@@ -1,4 +1,4 @@
-package api
+﻿package api
 
 import (
 	"context"
@@ -10,8 +10,23 @@ import (
 	"time"
 
 	"backend/api/handlers/agents"
+	analyticsHandlers "backend/api/handlers/analytics"
+	billingHandlers "backend/api/handlers/billing"
+	bookparserHandlers "backend/api/handlers/bookparser"
+	moderationHandlers "backend/api/handlers/moderation"
+	worldbuilderHandlers "backend/api/handlers/worldbuilder"
+	creditsHandlers "backend/api/handlers/credits"
+	complianceHandlers "backend/api/handlers/compliance"
+	contentHandlers "backend/api/handlers/content"
+	subscriptionHandlers "backend/api/handlers/subscription"
+	fragmentHandlers "backend/api/handlers/fragment"
+	multimodelHandlers "backend/api/handlers/multimodel"
+	plotHandlers "backend/api/handlers/plot"
+	marketplaceHandlers "backend/internal/tools/marketplace"
 	auditHandlers "backend/api/handlers/audit"
 	authHandlers "backend/api/handlers/auth"
+	cacheHandlers "backend/api/handlers/cache"
+	codesearchHandlers "backend/api/handlers/codesearch"
 	commandHandlers "backend/api/handlers/commands"
 	filesHandlers "backend/api/handlers/files"
 	knowledgeHandlers "backend/api/handlers/knowledge"
@@ -26,9 +41,23 @@ import (
 	agentSvc "backend/internal/agent"
 	"backend/internal/agent/runtime"
 	"backend/internal/ai"
+	"backend/internal/analytics"
+	"backend/internal/billing"
+	"backend/internal/bookparser"
+	"backend/internal/compliance"
+	"backend/internal/content"
+	"backend/internal/credits"
+	"backend/internal/fragment"
+	"backend/internal/multimodel"
+	"backend/internal/plot"
+	"backend/internal/metrics"
+	"backend/internal/moderation"
+	"backend/internal/worldbuilder"
+	"backend/internal/subscription"
 	auditpkg "backend/internal/audit"
 	"backend/internal/auth"
 	"backend/internal/cache"
+	"backend/internal/codesearch"
 	"backend/internal/command"
 	"backend/internal/config"
 	"backend/internal/infra/queue"
@@ -76,21 +105,21 @@ type AppContainer struct {
 	ConfigService tenantSvc.TenantConfigService
 	Hasher        *BcryptHasher
 
-	// 核心服务 (使用接口类型以提升可测试性和可维护性)
-	ModelService           modelSvc.ModelServiceInterface
-	ModelCredentialService modelSvc.ModelCredentialServiceInterface
-	ModelDiscoveryService  modelSvc.ModelDiscoveryServiceInterface
-	TemplateService        *templateSvc.TemplateService // TODO: 待接口化
-	AgentService           agentSvc.AgentServiceInterface
-	WorkflowService        workflowSvc.WorkflowServiceInterface
-	WorkspaceService       *workspaceSvc.Service // TODO: 待接口化
-	SessionService         modelSvc.SessionServiceInterface
-	AuditService           modelSvc.AuditLogServiceInterface
-	CommandService         *command.Service // TODO: 待接口化
+	// 核心服务
+	ModelService           *modelSvc.ModelService
+	ModelCredentialService *modelSvc.ModelCredentialService
+	ModelDiscoveryService  *modelSvc.ModelDiscoveryService
+	TemplateService        *templateSvc.TemplateService
+	AgentService           *agentSvc.AgentService
+	WorkflowService        *workflowSvc.WorkflowService
+	WorkspaceService       *workspaceSvc.Service
+	SessionService         *modelSvc.SessionService
+	AuditService           *modelSvc.AuditLogService
+	CommandService         *command.Service
 
 	// RAG 相关
-	KBService   modelSvc.KnowledgeBaseServiceInterface
-	DocService  modelSvc.DocumentServiceInterface
+	KBService   *modelSvc.KnowledgeBaseService
+	DocService  *modelSvc.DocumentService
 	RAGService  *rag.RAGService   // TODO: 待接口化
 	VectorStore rag.VectorStore
 
@@ -100,7 +129,57 @@ type AppContainer struct {
 	ClientFactory *ai.ClientFactory
 	
 	// 缓存
-	DiskCache *cache.DiskCache // L3硬盘缓存
+	DiskCache     *cache.DiskCache        // L3硬盘缓存
+	CacheMonitor  *cache.CacheMonitor     // 缓存监控服务
+
+	// 代码搜索
+	ACECodeSearchService      *codesearch.ACECodeSearchService
+	CodebaseSearchService     *codesearch.CodebaseSearchService
+
+	// 分析统计
+	AnalyticsService *analytics.Service
+
+	// 拆书服务
+	BookParserService *bookparser.Service
+
+	// 积分服务
+	CreditsService *credits.Service
+
+	// 计费服务
+	BillingService *billing.Service
+
+	// 内容审核服务
+	ModerationService *moderation.Service
+
+	// 世界观构建服务
+	WorldBuilderService *worldbuilder.Service
+
+	// 订阅服务
+	SubscriptionService *subscription.Service
+
+	// 内容管理服务
+	ContentService *content.Service
+
+	// 合规服务
+	ComplianceService *compliance.Service
+
+	// 片段管理服务
+	FragmentService *fragment.Service
+
+	// 多模型服务
+	MultiModelService *multimodel.Service
+
+	// 剧情推演服务
+	PlotService *plot.Service
+
+	// 消息服务
+	MessageService *notification.MessageService
+
+	// 工作空间模板服务
+	WorkspaceTemplateService *workspaceSvc.TemplateService
+
+	// 工具市场服务
+	MarketplaceService *marketplaceHandlers.Service
 
 	// 工具相关
 	ToolRegistry *tools.ToolRegistry
@@ -115,6 +194,8 @@ type AppContainer struct {
 	WSHub                      *notification.WebSocketHub
 	MultiNotifier              *notification.MultiNotifier
 	NotificationConfigService  notification.NotificationConfigServiceInterface
+	WebhookService             *notification.WebhookService
+	EmailService               *notification.EmailService
 
 	// 权限
 	PermMiddleware *auth.MiddlewareFactory
@@ -131,6 +212,7 @@ type Handlers struct {
 	Template           *templates.TemplateHandler
 	Agent              *agents.AgentHandler
 	AgentExecute       *agents.AgentExecuteHandler
+	AgentPerformance   *agents.PerformanceHandler
 	Workflow           *workflows.WorkflowHandler
 	WfExecute          *workflows.WorkflowExecuteHandler
 	Automation         *workflows.AutomationHandler
@@ -148,9 +230,27 @@ type Handlers struct {
 	Tool               *toolHandlers.ToolHandler
 	Notification       *notificationHandlers.WebSocketHandler
 	NotificationConfig *notificationHandlers.NotificationConfigHandler
+	Webhook            *notificationHandlers.WebhookHandler
+	Cache              *cacheHandlers.CacheHandler
+	CodeSearch         *codesearchHandlers.Handler
+	Analytics          *analyticsHandlers.DashboardHandler
+	BookParser         *bookparserHandlers.Handler
+	Credits            *creditsHandlers.Handler
+	Billing            *billingHandlers.Handler
+	Moderation         *moderationHandlers.Handler
+	WorldBuilder       *worldbuilderHandlers.Handler
+	Subscription       *subscriptionHandlers.Handler
+	Content            *contentHandlers.Handler
+	Compliance         *complianceHandlers.Handler
+	Fragment           *fragmentHandlers.Handler
+	MultiModel         *multimodelHandlers.Handler
+	Plot               *plotHandlers.Handler
+	Marketplace        *marketplaceHandlers.Handler
+	Message            *notificationHandlers.MessageHandler
+	WorkspaceTemplate  *workspaceHandlers.TemplateHandler
 }
 
-
+// InitContainer 初始化依赖注入容器
 // InitContainer 初始化应用容器
 func InitContainer(db *gorm.DB, cfg *config.Config) (*AppContainer, error) {
 	container := &AppContainer{
@@ -208,6 +308,7 @@ func (c *AppContainer) InitHandlers() *Handlers {
 	h.Template = templates.NewTemplateHandler(c.TemplateService)
 	h.Agent = agents.NewAgentHandler(c.AgentService)
 	h.AgentExecute = agents.NewAgentExecuteHandler(c.AgentRegistry, c.AsyncClient)
+	h.AgentPerformance = agents.NewPerformanceHandler(agentSvc.NewPerformanceService(c.DB))
 	h.Workflow = workflows.NewWorkflowHandler(c.WorkflowService)
 	h.WfExecute = workflows.NewWorkflowExecuteHandler(c.WorkflowEngine, c.DB)
 	h.Workspace = workspaceHandlers.NewHandler(c.WorkspaceService, c.ToolExecutor, c.AgentRegistry)
@@ -223,6 +324,64 @@ func (c *AppContainer) InitHandlers() *Handlers {
 	h.Tool = toolHandlers.NewToolHandler(c.ToolRegistry, c.ToolExecutor, c.DB)
 	h.Notification = notificationHandlers.NewWebSocketHandler(c.WSHub)
 	h.NotificationConfig = notificationHandlers.NewNotificationConfigHandler(c.NotificationConfigService)
+	h.Webhook = notificationHandlers.NewWebhookHandler(c.WebhookService)
+	
+	// 缓存统计 Handler
+	if c.DiskCache != nil {
+		h.Cache = cacheHandlers.NewCacheHandler(c.DiskCache)
+	}
+
+	// 代码搜索 Handler
+	h.CodeSearch = codesearchHandlers.NewHandler(c.ACECodeSearchService, c.CodebaseSearchService)
+
+	// 分析统计 Handler
+	h.Analytics = analyticsHandlers.NewDashboardHandler(c.AnalyticsService)
+
+	// 拆书服务 Handler
+	h.BookParser = bookparserHandlers.NewHandler(c.BookParserService)
+
+	// 积分 Handler
+	h.Credits = creditsHandlers.NewHandler(c.CreditsService)
+
+	// 计费 Handler
+	h.Billing = billingHandlers.NewHandler(c.BillingService)
+
+	// 内容审核 Handler
+	h.Moderation = moderationHandlers.NewHandler(c.ModerationService)
+
+	// 世界观构建 Handler
+	h.WorldBuilder = worldbuilderHandlers.NewHandler(c.WorldBuilderService)
+
+	// 订阅 Handler
+	h.Subscription = subscriptionHandlers.NewHandler(c.SubscriptionService)
+
+	// 内容管理 Handler
+	h.Content = contentHandlers.NewHandler(c.ContentService)
+
+	// 合规管理 Handler
+	h.Compliance = complianceHandlers.NewHandler(c.ComplianceService)
+
+	// 片段管理 Handler
+	h.Fragment = fragmentHandlers.NewHandler(c.FragmentService)
+
+	// 多模型抽卡 Handler
+	h.MultiModel = multimodelHandlers.NewHandler(c.MultiModelService)
+
+	// 剧情推演 Handler
+	h.Plot = plotHandlers.NewHandler(c.PlotService)
+
+	// 工具市场 Handler
+	h.Marketplace = marketplaceHandlers.NewHandler(c.MarketplaceService)
+
+	// 消息 Handler
+	if c.MessageService != nil {
+		h.Message = notificationHandlers.NewMessageHandler(c.MessageService)
+	}
+
+	// 工作空间模板 Handler
+	if c.WorkspaceTemplateService != nil {
+		h.WorkspaceTemplate = workspaceHandlers.NewTemplateHandler(c.WorkspaceTemplateService)
+	}
 
 	// 自动化 Handler（需要 Redis）
 	if c.RedisClient != nil && c.AutomationEngine != nil {
@@ -370,6 +529,20 @@ func (c *AppContainer) initCoreServices(db *gorm.DB, cfg *config.Config) error {
 		return fmt.Errorf("初始化命令请求表失败: %w", err)
 	}
 
+	// 代码搜索服务
+	codeSearchBasePath := strings.TrimSpace(os.Getenv("CODE_SEARCH_BASE_PATH"))
+	if codeSearchBasePath == "" {
+		codeSearchBasePath = "."
+	}
+	c.ACECodeSearchService = codesearch.NewACECodeSearchService(codeSearchBasePath)
+	
+	// 语义代码搜索（需要 Embedding Provider）
+	embProvider := rag.NewOpenAIEmbeddingProvider(os.Getenv("OPENAI_API_KEY"), "")
+	c.CodebaseSearchService = codesearch.NewCodebaseSearchService(codeSearchBasePath, embProvider)
+
+	// 分析统计服务
+	c.AnalyticsService = analytics.NewService(db)
+
 	return nil
 }
 
@@ -396,13 +569,29 @@ func (c *AppContainer) initAgentRuntime(db *gorm.DB, cfg *config.Config) error {
 				zap.String("db_path", cfg.Cache.Disk.DBPath),
 				zap.Int("max_size_gb", cfg.Cache.Disk.MaxSizeGB),
 				zap.Duration("ttl", ttl),
-			)
+		)
+			
+			// TODO: 修复CacheMonitor功能
+			// 启动缓存监控服务
+			// monitorInterval := 5 * time.Minute // 默认5分钟
+			// if cfg.Cache.Disk.MonitorEnabled {
+			// 	if cfg.Cache.Disk.MonitorInterval != "" {
+			// 		if interval, err := time.ParseDuration(cfg.Cache.Disk.MonitorInterval); err == nil {
+			// 			monitorInterval = interval
+			// 		} else {
+			// 			logger.Warn("解析缓存监控间隔失败，使用默认值5m", zap.Error(err))
+			// 		}
+			// 	}
+			// 	c.CacheMonitor = cache.NewCacheMonitor(logger.Get())
+			// 	logger.Info("缓存监控服务已启动", zap.Duration("interval", monitorInterval))
+			// }
 		}
 	}
 	c.DiskCache = diskCache
 	
 	dbLogger := ai.NewDBLogger(db)
 	c.ClientFactory = ai.NewClientFactory(db, dbLogger, diskCache)
+
 
 	c.AgentRegistry = runtime.NewRegistry(db, c.ClientFactory)
 
@@ -445,6 +634,97 @@ func (c *AppContainer) initAgentRuntime(db *gorm.DB, cfg *config.Config) error {
 	toolHelper := runtime.NewToolHelper(c.ToolRegistry, c.ToolExecutor)
 	c.AgentRegistry.SetToolHelper(toolHelper)
 
+	// 拆书服务（依赖 AgentRegistry 和 RAGService）
+	c.BookParserService = bookparser.NewService(db, c.AgentRegistry, c.RAGService)
+	if err := c.BookParserService.AutoMigrate(); err != nil {
+		logger.Warn("拆书服务表迁移失败", zap.Error(err))
+	}
+
+	// 积分服务
+	c.CreditsService = credits.NewService(db)
+	// 自动迁移积分表
+	if err := db.AutoMigrate(&credits.CreditAccount{}, &credits.CreditTransaction{}, &credits.CreditPricing{}); err != nil {
+		logger.Warn("积分服务表迁移失败", zap.Error(err))
+	}
+
+	// 计费服务
+	metricsService := metrics.NewMetricsService(db)
+	c.BillingService = billing.NewService(db, c.CreditsService, metricsService)
+	if err := c.BillingService.AutoMigrate(); err != nil {
+		logger.Warn("计费服务表迁移失败", zap.Error(err))
+	}
+
+	// 内容审核服务
+	c.ModerationService = moderation.NewService(db, c.AgentRegistry)
+	if err := c.ModerationService.AutoMigrate(); err != nil {
+		logger.Warn("内容审核服务表迁移失败", zap.Error(err))
+	}
+
+	// 世界观构建服务
+	c.WorldBuilderService = worldbuilder.NewService(db, c.AgentRegistry)
+	if err := c.WorldBuilderService.AutoMigrate(); err != nil {
+		logger.Warn("世界观构建服务表迁移失败", zap.Error(err))
+	}
+	// 初始化内置模板
+	c.WorldBuilderService.InitBuiltinTemplates(context.Background())
+
+	// 订阅服务
+	c.SubscriptionService = subscription.NewService(db)
+	// 自动迁移订阅表
+	if err := db.AutoMigrate(&subscription.SubscriptionPlan{}, &subscription.UserSubscription{}, &subscription.SubscriptionHistory{}); err != nil {
+		logger.Warn("订阅服务表迁移失败", zap.Error(err))
+	}
+
+	// 内容管理服务
+	c.ContentService = content.NewService(db)
+	if err := c.ContentService.AutoMigrate(); err != nil {
+		logger.Warn("内容管理服务表迁移失败", zap.Error(err))
+	}
+
+	// 合规服务
+	c.ComplianceService = compliance.NewService(db)
+	if err := c.ComplianceService.AutoMigrate(); err != nil {
+		logger.Warn("合规服务表迁移失败", zap.Error(err))
+	}
+
+	// 片段管理服务
+	c.FragmentService = fragment.NewService(db)
+	if err := db.AutoMigrate(&fragment.Fragment{}); err != nil {
+		logger.Warn("片段管理服务表迁移失败", zap.Error(err))
+	}
+
+	// 多模型抽卡服务（依赖 AgentRegistry 和 ModelService）
+	c.MultiModelService = multimodel.NewService(db, c.AgentRegistry, c.ModelService)
+	if err := db.AutoMigrate(&multimodel.DrawHistory{}); err != nil {
+		logger.Warn("多模型服务表迁移失败", zap.Error(err))
+	}
+
+	// 剧情推演服务（依赖 AgentRegistry 和 WorkspaceService）
+	c.PlotService = plot.NewService(db, c.AgentRegistry, c.WorkspaceService)
+	if err := db.AutoMigrate(&plot.PlotRecommendation{}); err != nil {
+		logger.Warn("剧情推演服务表迁移失败", zap.Error(err))
+	}
+
+	// 消息服务
+	c.MessageService = notification.NewMessageService(db)
+	if err := c.MessageService.AutoMigrate(); err != nil {
+		logger.Warn("消息服务表迁移失败", zap.Error(err))
+	}
+
+	// 工作空间模板服务
+	c.WorkspaceTemplateService = workspaceSvc.NewTemplateService(db, c.WorkspaceService)
+	if err := c.WorkspaceTemplateService.AutoMigrate(); err != nil {
+		logger.Warn("工作空间模板服务表迁移失败", zap.Error(err))
+	}
+	// 初始化内置模板
+	c.WorkspaceTemplateService.InitBuiltinTemplates(context.Background())
+
+	// 工具市场服务
+	c.MarketplaceService = marketplaceHandlers.NewService(db)
+	if err := c.MarketplaceService.AutoMigrate(); err != nil {
+		logger.Warn("工具市场服务表迁移失败", zap.Error(err))
+	}
+
 	return nil
 }
 
@@ -480,6 +760,29 @@ func (c *AppContainer) initNotification() {
 	
 	// 初始化通知配置服务
 	c.NotificationConfigService = notification.NewNotificationConfigService(c.DB)
+
+	// 初始化Webhook服务
+	c.WebhookService = notification.NewWebhookService(3)
+
+	// 初始化邮件服务
+	emailConfig := &notification.EmailServiceConfig{
+		SMTPHost:    os.Getenv("SMTP_HOST"),
+		SMTPPort:    587,
+		Username:    os.Getenv("SMTP_USERNAME"),
+		Password:    os.Getenv("SMTP_PASSWORD"),
+		FromAddress: os.Getenv("SMTP_FROM_ADDRESS"),
+		FromName:    os.Getenv("SMTP_FROM_NAME"),
+		UseTLS:      os.Getenv("SMTP_USE_TLS") != "false",
+		MaxRetries:  3,
+		QueueSize:   1000,
+		Workers:     3,
+	}
+	if port := os.Getenv("SMTP_PORT"); port != "" {
+		if p, err := strconv.Atoi(port); err == nil {
+			emailConfig.SMTPPort = p
+		}
+	}
+	c.EmailService = notification.NewEmailService(c.DB, emailConfig)
 
 	targetResolver := approval.NewConfigTargetResolver(c.DB, c.ConfigService)
 	c.ApprovalManager = approval.NewManager(
@@ -563,3 +866,4 @@ func (a *TenantAuditAdapter) LogAction(ctx context.Context, tc tenantSvc.TenantC
 		_ = a.svc.CreateLog(context.Background(), log)
 	}()
 }
+
