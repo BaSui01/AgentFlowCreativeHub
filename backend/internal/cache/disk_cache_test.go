@@ -361,6 +361,97 @@ func TestConcurrentAccess(t *testing.T) {
 	assert.GreaterOrEqual(t, stats["total_entries"].(int), 8, "至少应该有8条记录")
 }
 
+func TestCompression(t *testing.T) {
+	cache, _ := setupTestCache(t)
+	defer cache.Close()
+
+	ctx := context.Background()
+
+	// 测试小数据不压缩（< 1KB）
+	smallEntry := &CacheEntry{
+		CacheKey:   GenerateCacheKey("gpt-4", "small"),
+		Model:      "gpt-4",
+		PromptHash: GenerateCacheKey("gpt-4", "small"),
+		Response:   "Small response", // < 1KB
+		TokensUsed: 10,
+		CostUSD:    0.0002,
+	}
+
+	err := cache.Set(ctx, smallEntry)
+	assert.NoError(t, err)
+
+	retrieved, err := cache.Get(ctx, smallEntry.CacheKey)
+	assert.NoError(t, err)
+	require.NotNil(t, retrieved)
+	assert.Equal(t, "Small response", retrieved.Response)
+
+	// 测试大数据压缩（> 1KB）
+	largeResponse := ""
+	for i := 0; i < 200; i++ {
+		largeResponse += "This is a repeated line for testing compression. "
+	}
+
+	largeEntry := &CacheEntry{
+		CacheKey:   GenerateCacheKey("gpt-4", "large"),
+		Model:      "gpt-4",
+		PromptHash: GenerateCacheKey("gpt-4", "large"),
+		Response:   largeResponse, // > 1KB，应该被压缩
+		TokensUsed: 1000,
+		CostUSD:    0.02,
+	}
+
+	err = cache.Set(ctx, largeEntry)
+	assert.NoError(t, err)
+
+	retrieved, err = cache.Get(ctx, largeEntry.CacheKey)
+	assert.NoError(t, err)
+	require.NotNil(t, retrieved)
+	assert.Equal(t, largeResponse, retrieved.Response, "解压后内容应该与原始内容相同")
+
+	// 验证统计中有压缩条目
+	stats, err := cache.GetStats(ctx)
+	assert.NoError(t, err)
+	assert.GreaterOrEqual(t, stats["compressed_entries"].(int), 1, "应该至少有1条压缩记录")
+}
+
+func TestCompressionHelpers(t *testing.T) {
+	// 测试压缩和解压
+	original := []byte("This is test data that will be compressed and decompressed. " +
+		"Adding more content to make it bigger. Repeating content helps compression.")
+
+	compressed, err := compress(original)
+	assert.NoError(t, err)
+	assert.NotEmpty(t, compressed)
+
+	decompressed, err := decompress(compressed)
+	assert.NoError(t, err)
+	assert.Equal(t, original, decompressed, "解压后数据应该与原始数据相同")
+
+	// 对于重复内容，压缩后应该更小
+	repeatedContent := []byte("")
+	for i := 0; i < 100; i++ {
+		repeatedContent = append(repeatedContent, []byte("repeated content ")...)
+	}
+
+	compressedRepeated, err := compress(repeatedContent)
+	assert.NoError(t, err)
+	assert.Less(t, len(compressedRepeated), len(repeatedContent), "重复内容压缩后应该更小")
+}
+
+func TestShouldCompress(t *testing.T) {
+	// 小于阈值不压缩
+	small := make([]byte, CompressionThreshold-1)
+	assert.False(t, shouldCompress(small))
+
+	// 等于阈值压缩
+	equal := make([]byte, CompressionThreshold)
+	assert.True(t, shouldCompress(equal))
+
+	// 大于阈值压缩
+	large := make([]byte, CompressionThreshold+1)
+	assert.True(t, shouldCompress(large))
+}
+
 func TestUpsert(t *testing.T) {
 	cache, _ := setupTestCache(t)
 	defer cache.Close()

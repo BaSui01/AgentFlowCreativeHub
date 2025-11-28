@@ -2,16 +2,27 @@
 package cache
 
 import (
+	"bytes"
+	"compress/gzip"
 	"context"
 	"crypto/md5"
 	"database/sql"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"io"
 	"sync"
 	"time"
 
 	_ "modernc.org/sqlite"
+)
+
+// 压缩相关常量
+const (
+	// CompressionThreshold 压缩阈值：超过此大小的响应才进行压缩（1KB）
+	CompressionThreshold = 1024
+	// CompressionLevel gzip 压缩级别（1-9，6为默认平衡）
+	CompressionLevel = gzip.DefaultCompression
 )
 
 // DiskCache 硬盘缓存管理器
@@ -149,7 +160,7 @@ func (c *DiskCache) Get(ctx context.Context, key string) (*CacheEntry, error) {
 	
 	query := `
 		SELECT cache_key, model, prompt_hash, response, tokens_used, cost_usd,
-		       hit_count, created_at, last_accessed_at, expires_at, metadata
+		       hit_count, created_at, last_accessed_at, expires_at, compressed, metadata
 		FROM llm_cache
 		WHERE cache_key = ? AND (expires_at IS NULL OR expires_at > datetime('now'))
 	`
@@ -157,18 +168,21 @@ func (c *DiskCache) Get(ctx context.Context, key string) (*CacheEntry, error) {
 	var entry CacheEntry
 	var expiresAt sql.NullTime
 	var metadata sql.NullString
+	var compressed bool
+	var responseData []byte
 
 	err := c.db.QueryRowContext(ctx, query, key).Scan(
 		&entry.CacheKey,
 		&entry.Model,
 		&entry.PromptHash,
-		&entry.Response,
+		&responseData,
 		&entry.TokensUsed,
 		&entry.CostUSD,
 		&entry.HitCount,
 		&entry.CreatedAt,
 		&entry.LastAccessedAt,
 		&expiresAt,
+		&compressed,
 		&metadata,
 	)
 
@@ -187,6 +201,17 @@ func (c *DiskCache) Get(ctx context.Context, key string) (*CacheEntry, error) {
 	c.statsMu.Lock()
 	c.cacheHits++
 	c.statsMu.Unlock()
+
+	// 如果数据已压缩，先解压
+	if compressed {
+		decompressed, err := decompress(responseData)
+		if err != nil {
+			return nil, fmt.Errorf("解压缓存数据失败: %w", err)
+		}
+		entry.Response = string(decompressed)
+	} else {
+		entry.Response = string(responseData)
+	}
 
 	if expiresAt.Valid {
 		entry.ExpiresAt = &expiresAt.Time
@@ -218,15 +243,29 @@ func (c *DiskCache) Set(ctx context.Context, entry *CacheEntry) error {
 		metadata.String = string(entry.Metadata)
 	}
 
+	// 判断是否需要压缩
+	responseData := []byte(entry.Response)
+	compressed := false
+	
+	if shouldCompress(responseData) {
+		compressedData, err := compress(responseData)
+		if err == nil && len(compressedData) < len(responseData) {
+			// 只有压缩后更小才使用压缩数据
+			responseData = compressedData
+			compressed = true
+		}
+	}
+
 	query := `
 		INSERT INTO llm_cache (
 			cache_key, model, prompt_hash, response, tokens_used, cost_usd,
-			expires_at, metadata
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+			expires_at, compressed, metadata
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(cache_key) DO UPDATE SET
 			response = excluded.response,
 			tokens_used = excluded.tokens_used,
 			cost_usd = excluded.cost_usd,
+			compressed = excluded.compressed,
 			updated_at = CURRENT_TIMESTAMP,
 			metadata = excluded.metadata
 	`
@@ -235,10 +274,11 @@ func (c *DiskCache) Set(ctx context.Context, entry *CacheEntry) error {
 		entry.CacheKey,
 		entry.Model,
 		entry.PromptHash,
-		entry.Response,
+		responseData,
 		entry.TokensUsed,
 		entry.CostUSD,
 		expiresAt,
+		compressed,
 		metadata,
 	)
 
@@ -349,12 +389,13 @@ func (c *DiskCache) checkAndCleanup() {
 // GetStats 获取缓存统计
 func (c *DiskCache) GetStats(ctx context.Context) (map[string]any, error) {
 	var stats struct {
-		TotalEntries int
-		TotalHits    int64
-		TotalSizeKB  int64
-		AvgHitCount  float64
-		OldestEntry  sql.NullString
-		NewestEntry  sql.NullString
+		TotalEntries      int
+		TotalHits         int64
+		TotalSizeKB       int64
+		AvgHitCount       float64
+		OldestEntry       sql.NullString
+		NewestEntry       sql.NullString
+		CompressedEntries int
 	}
 
 	query := `
@@ -364,7 +405,8 @@ func (c *DiskCache) GetStats(ctx context.Context) (map[string]any, error) {
 			COALESCE(SUM(length(response))/1024, 0) as total_size_kb,
 			COALESCE(AVG(hit_count), 0) as avg_hit_count,
 			MIN(created_at) as oldest,
-			MAX(created_at) as newest
+			MAX(created_at) as newest,
+			COALESCE(SUM(CASE WHEN compressed = 1 THEN 1 ELSE 0 END), 0) as compressed_entries
 		FROM llm_cache
 	`
 
@@ -375,6 +417,7 @@ func (c *DiskCache) GetStats(ctx context.Context) (map[string]any, error) {
 		&stats.AvgHitCount,
 		&stats.OldestEntry,
 		&stats.NewestEntry,
+		&stats.CompressedEntries,
 	)
 
 	if err != nil {
@@ -394,17 +437,27 @@ func (c *DiskCache) GetStats(ctx context.Context) (map[string]any, error) {
 		hitRate = float64(cacheHits) / float64(totalReqs) * 100
 	}
 
+	// 计算压缩率
+	var compressionRate float64
+	if stats.TotalEntries > 0 {
+		compressionRate = float64(stats.CompressedEntries) / float64(stats.TotalEntries) * 100
+	}
+
 	result := map[string]any{
-		"total_entries":     stats.TotalEntries,
-		"total_hits":        stats.TotalHits,
-		"total_size_mb":     float64(stats.TotalSizeKB) / 1024,
-		"avg_hit_count":     stats.AvgHitCount,
+		"total_entries":       stats.TotalEntries,
+		"total_hits":          stats.TotalHits,
+		"total_size_mb":       float64(stats.TotalSizeKB) / 1024,
+		"avg_hit_count":       stats.AvgHitCount,
 		
-		// 新增性能指标
-		"total_requests":    totalReqs,
-		"cache_hits":        cacheHits,
-		"cache_misses":      cacheMisses,
-		"hit_rate_percent":  hitRate,
+		// 性能指标
+		"total_requests":      totalReqs,
+		"cache_hits":          cacheHits,
+		"cache_misses":        cacheMisses,
+		"hit_rate_percent":    hitRate,
+		
+		// 压缩统计
+		"compressed_entries":  stats.CompressedEntries,
+		"compression_rate":    compressionRate,
 	}
 
 	if stats.OldestEntry.Valid && stats.OldestEntry.String != "" {
@@ -427,4 +480,45 @@ func (c *DiskCache) Close() error {
 		return c.db.Close()
 	}
 	return nil
+}
+
+// compress 使用 gzip 压缩数据
+func compress(data []byte) ([]byte, error) {
+	var buf bytes.Buffer
+	writer, err := gzip.NewWriterLevel(&buf, CompressionLevel)
+	if err != nil {
+		return nil, fmt.Errorf("创建gzip写入器失败: %w", err)
+	}
+	
+	if _, err := writer.Write(data); err != nil {
+		writer.Close()
+		return nil, fmt.Errorf("gzip写入失败: %w", err)
+	}
+	
+	if err := writer.Close(); err != nil {
+		return nil, fmt.Errorf("gzip关闭失败: %w", err)
+	}
+	
+	return buf.Bytes(), nil
+}
+
+// decompress 解压 gzip 数据
+func decompress(data []byte) ([]byte, error) {
+	reader, err := gzip.NewReader(bytes.NewReader(data))
+	if err != nil {
+		return nil, fmt.Errorf("创建gzip读取器失败: %w", err)
+	}
+	defer reader.Close()
+	
+	result, err := io.ReadAll(reader)
+	if err != nil {
+		return nil, fmt.Errorf("gzip解压失败: %w", err)
+	}
+	
+	return result, nil
+}
+
+// shouldCompress 判断是否需要压缩
+func shouldCompress(data []byte) bool {
+	return len(data) >= CompressionThreshold
 }

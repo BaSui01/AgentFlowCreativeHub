@@ -125,6 +125,7 @@ type DiskCacheConfig struct {
 	MaxSizeGB       int    `mapstructure:"max_size_gb"`      // 最大缓存大小(GB)
 	TTL             string `mapstructure:"ttl"`              // 缓存过期时间(如"720h"表示30天)
 	CleanupInterval string `mapstructure:"cleanup_interval"` // 清理间隔(如"30m")
+	MonitorInterval string `mapstructure:"monitor_interval"` // 监控日志输出间隔(如"5m")
 }
 
 var globalConfig *Config

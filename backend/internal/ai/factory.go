@@ -13,6 +13,9 @@ import (
 	"backend/internal/ai/google"
 	"backend/internal/ai/ollama"
 	"backend/internal/ai/openai"
+	"backend/internal/ai/wenxin"
+	"backend/internal/ai/xunfei"
+	"backend/internal/ai/zhipu"
 	"backend/internal/cache"
 	modelspkg "backend/internal/models"
 	"backend/internal/security"
@@ -101,6 +104,12 @@ func (f *ClientFactory) GetClient(ctx context.Context, tenantID, modelID string)
 			config.BaseURL = "https://dashscope.aliyuncs.com/compatible-mode/v1"
 		case "ollama":
 			config.BaseURL = "http://localhost:11434"
+		case "wenxin", "baidu", "ernie":
+			config.BaseURL = "https://qianfan.baidubce.com/v2"
+		case "zhipu", "glm":
+			config.BaseURL = "https://open.bigmodel.cn/api/paas/v4"
+		case "xunfei", "spark":
+			config.BaseURL = "https://spark-api-open.xf-yun.com/v1"
 		}
 	}
 
@@ -169,6 +178,15 @@ func (f *ClientFactory) createClient(config *ClientConfig, apiFormat string) (Mo
 	case "qwen":
 		// Qwen 兼容 OpenAI 协议
 		return openai.NewClient(config)
+	case "wenxin", "baidu", "ernie":
+		// 百度文心一言
+		return wenxin.NewClient(config)
+	case "zhipu", "glm":
+		// 智谱 AI GLM
+		return zhipu.NewClient(config)
+	case "xunfei", "spark":
+		// 讯飞星火
+		return xunfei.NewClient(config)
 	case "custom":
 		// Custom 驱动
 		return custom.NewClient(config)
@@ -245,6 +263,13 @@ func (f *ClientFactory) resolveCredentials(ctx context.Context, model *modelspkg
 		"azure":     "AZURE_OPENAI_API_KEY",
 		"deepseek":  "DEEPSEEK_API_KEY",
 		"qwen":      "QWEN_API_KEY",
+		"wenxin":    "WENXIN_API_KEY",
+		"baidu":     "WENXIN_API_KEY",
+		"ernie":     "WENXIN_API_KEY",
+		"zhipu":     "ZHIPU_API_KEY",
+		"glm":       "ZHIPU_API_KEY",
+		"xunfei":    "XUNFEI_API_KEY",
+		"spark":     "XUNFEI_API_KEY",
 		"custom":    "CUSTOM_API_KEY",
 	}
 	if envVar, ok := envKeyMap[model.Provider]; ok {

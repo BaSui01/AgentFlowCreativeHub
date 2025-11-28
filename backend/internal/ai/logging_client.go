@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"sync"
 	"time"
 
 	"backend/internal/cache"
@@ -18,6 +19,11 @@ type LoggingClient struct {
 	modelID   string
 	model     *modelspkg.Model
 	diskCache *cache.DiskCache // L3硬盘缓存
+	
+	// 缓存统计
+	cacheHits   int64
+	cacheMisses int64
+	statsMu     sync.RWMutex
 }
 
 // NewLoggingClient 创建带日志记录的客户端
@@ -51,12 +57,22 @@ func (c *LoggingClient) ChatCompletion(ctx context.Context, req *ChatCompletionR
 			// 缓存命中！从缓存条目反序列化响应
 			var cachedResp ChatCompletionResponse
 			if err := json.Unmarshal([]byte(entry.Response), &cachedResp); err == nil {
+				// 更新缓存命中统计
+				c.statsMu.Lock()
+				c.cacheHits++
+				c.statsMu.Unlock()
+				
 				// 记录缓存命中日志
 				latency := time.Since(start).Milliseconds()
 				c.logCall(ctx, &cachedResp, latency, nil)
 				return &cachedResp, nil
 			}
 		}
+		
+		// 缓存未命中，更新统计
+		c.statsMu.Lock()
+		c.cacheMisses++
+		c.statsMu.Unlock()
 	}
 
 	// 缓存未命中或不可用，调用底层客户端
@@ -345,4 +361,24 @@ func (c *LoggingClient) generateCacheKey(req *ChatCompletionRequest) string {
 	
 	// 使用DiskCache的GenerateCacheKey生成键
 	return cache.GenerateCacheKey(c.modelID, promptWithParams)
+}
+
+// GetCacheStats 获取缓存统计信息
+func (c *LoggingClient) GetCacheStats() map[string]interface{} {
+	c.statsMu.RLock()
+	defer c.statsMu.RUnlock()
+	
+	totalRequests := c.cacheHits + c.cacheMisses
+	hitRate := 0.0
+	if totalRequests > 0 {
+		hitRate = float64(c.cacheHits) / float64(totalRequests) * 100
+	}
+	
+	return map[string]interface{}{
+		"cache_hits":        c.cacheHits,
+		"cache_misses":      c.cacheMisses,
+		"total_requests":    totalRequests,
+		"hit_rate_percent":  hitRate,
+		"cache_enabled":     c.diskCache != nil,
+	}
 }

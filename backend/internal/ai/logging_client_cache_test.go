@@ -186,3 +186,185 @@ func TestLoggingClientCache(t *testing.T) {
 	
 	t.Log("🎉 所有缓存测试通过！")
 }
+
+// TestLoggingClient_GetCacheStats 测试缓存统计功能
+func TestLoggingClient_GetCacheStats(t *testing.T) {
+	// 创建临时数据库文件
+	tempDB := ":memory:" // 使用内存数据库，无需清理
+	
+	// 初始化硬盘缓存
+	diskCache, err := cache.NewDiskCache(tempDB, 1*time.Hour, 1)
+	if err != nil {
+		t.Fatalf("创建DiskCache失败: %v", err)
+	}
+	defer diskCache.Close()
+	
+	// 创建mock客户端
+	mockClient := &mockModelClient{}
+	
+	// 创建LoggingClient（带缓存）
+	model := &modelspkg.Model{
+		ID:              "test-model",
+		Provider:        "openai",
+		ModelIdentifier: "gpt-3.5-turbo",
+		InputCostPer1K:  0.001,
+		OutputCostPer1K: 0.002,
+	}
+	
+	loggingClient := NewLoggingClient(mockClient, nil, "tenant-1", "model-1", model, diskCache)
+	
+	ctx := context.Background()
+	
+	// 测试初始状态
+	t.Log("测试初始状态...")
+	stats := loggingClient.GetCacheStats()
+	if stats["cache_hits"].(int64) != 0 {
+		t.Errorf("初始cache_hits应为0，实际: %v", stats["cache_hits"])
+	}
+	if stats["cache_misses"].(int64) != 0 {
+		t.Errorf("初始cache_misses应为0，实际: %v", stats["cache_misses"])
+	}
+	if stats["total_requests"].(int64) != 0 {
+		t.Errorf("初始total_requests应为0，实际: %v", stats["total_requests"])
+	}
+	if stats["hit_rate_percent"].(float64) != 0.0 {
+		t.Errorf("初始hit_rate_percent应为0.0，实际: %v", stats["hit_rate_percent"])
+	}
+	if stats["cache_enabled"].(bool) != true {
+		t.Errorf("cache_enabled应为true，实际: %v", stats["cache_enabled"])
+	}
+	t.Logf("✅ 初始状态正确: %+v", stats)
+	
+	// 构建测试请求（低温度，可缓存）
+	req := &ChatCompletionRequest{
+		Messages: []Message{
+			{Role: "user", Content: "Hello, world!"},
+		},
+		Temperature: 0.1,
+		MaxTokens:   100,
+		TopP:        0.9,
+	}
+	
+	// 第一次调用 - 缓存未命中
+	t.Log("第一次调用（应该缓存未命中）...")
+	_, err = loggingClient.ChatCompletion(ctx, req)
+	if err != nil {
+		t.Fatalf("第一次调用失败: %v", err)
+	}
+	
+	// 等待缓存写入
+	time.Sleep(200 * time.Millisecond)
+	
+	stats = loggingClient.GetCacheStats()
+	if stats["cache_hits"].(int64) != 0 {
+		t.Errorf("第一次后cache_hits应为0，实际: %v", stats["cache_hits"])
+	}
+	if stats["cache_misses"].(int64) != 1 {
+		t.Errorf("第一次后cache_misses应为1，实际: %v", stats["cache_misses"])
+	}
+	if stats["total_requests"].(int64) != 1 {
+		t.Errorf("第一次后total_requests应为1，实际: %v", stats["total_requests"])
+	}
+	if stats["hit_rate_percent"].(float64) != 0.0 {
+		t.Errorf("第一次后hit_rate_percent应为0.0，实际: %v", stats["hit_rate_percent"])
+	}
+	t.Logf("✅ 第一次调用统计正确: %+v", stats)
+	
+	// 第二次调用 - 缓存命中
+	t.Log("第二次调用（应该缓存命中）...")
+	_, err = loggingClient.ChatCompletion(ctx, req)
+	if err != nil {
+		t.Fatalf("第二次调用失败: %v", err)
+	}
+	
+	stats = loggingClient.GetCacheStats()
+	if stats["cache_hits"].(int64) != 1 {
+		t.Errorf("第二次后cache_hits应为1，实际: %v", stats["cache_hits"])
+	}
+	if stats["cache_misses"].(int64) != 1 {
+		t.Errorf("第二次后cache_misses应为1，实际: %v", stats["cache_misses"])
+	}
+	if stats["total_requests"].(int64) != 2 {
+		t.Errorf("第二次后total_requests应为2，实际: %v", stats["total_requests"])
+	}
+	if stats["hit_rate_percent"].(float64) != 50.0 {
+		t.Errorf("第二次后hit_rate_percent应为50.0，实际: %v", stats["hit_rate_percent"])
+	}
+	t.Logf("✅ 第二次调用统计正确: %+v", stats)
+	
+	// 第三次调用 - 再次缓存命中
+	t.Log("第三次调用（应该再次缓存命中）...")
+	_, err = loggingClient.ChatCompletion(ctx, req)
+	if err != nil {
+		t.Fatalf("第三次调用失败: %v", err)
+	}
+	
+	stats = loggingClient.GetCacheStats()
+	if stats["cache_hits"].(int64) != 2 {
+		t.Errorf("第三次后cache_hits应为2，实际: %v", stats["cache_hits"])
+	}
+	if stats["cache_misses"].(int64) != 1 {
+		t.Errorf("第三次后cache_misses应为1，实际: %v", stats["cache_misses"])
+	}
+	if stats["total_requests"].(int64) != 3 {
+		t.Errorf("第三次后total_requests应为3，实际: %v", stats["total_requests"])
+	}
+	// 允许浮点数误差
+	hitRate := stats["hit_rate_percent"].(float64)
+	expectedHitRate := 66.66666666666667
+	if hitRate < expectedHitRate-0.01 || hitRate > expectedHitRate+0.01 {
+		t.Errorf("第三次后hit_rate_percent应约为66.67，实际: %v", hitRate)
+	}
+	t.Logf("✅ 第三次调用统计正确: %+v", stats)
+	
+	// 第四次调用 - 不同内容，缓存未命中
+	t.Log("第四次调用（不同内容，应该缓存未命中）...")
+	req2 := &ChatCompletionRequest{
+		Messages: []Message{
+			{Role: "user", Content: "Different message"},
+		},
+		Temperature: 0.1,
+		MaxTokens:   100,
+		TopP:        0.9,
+	}
+	
+	_, err = loggingClient.ChatCompletion(ctx, req2)
+	if err != nil {
+		t.Fatalf("第四次调用失败: %v", err)
+	}
+	
+	stats = loggingClient.GetCacheStats()
+	if stats["cache_hits"].(int64) != 2 {
+		t.Errorf("第四次后cache_hits应为2，实际: %v", stats["cache_hits"])
+	}
+	if stats["cache_misses"].(int64) != 2 {
+		t.Errorf("第四次后cache_misses应为2，实际: %v", stats["cache_misses"])
+	}
+	if stats["total_requests"].(int64) != 4 {
+		t.Errorf("第四次后total_requests应为4，实际: %v", stats["total_requests"])
+	}
+	if stats["hit_rate_percent"].(float64) != 50.0 {
+		t.Errorf("第四次后hit_rate_percent应为50.0，实际: %v", stats["hit_rate_percent"])
+	}
+	t.Logf("✅ 第四次调用统计正确: %+v", stats)
+	
+	t.Log("🎉 所有缓存统计测试通过！")
+}
+
+// TestLoggingClient_GetCacheStats_NoCache 测试无缓存时的统计
+func TestLoggingClient_GetCacheStats_NoCache(t *testing.T) {
+	mockClient := &mockModelClient{}
+	
+	// 创建LoggingClient（不启用缓存）
+	loggingClient := NewLoggingClient(mockClient, nil, "tenant-1", "model-1", nil, nil)
+	
+	stats := loggingClient.GetCacheStats()
+	if stats["cache_enabled"].(bool) != false {
+		t.Errorf("无缓存时cache_enabled应为false，实际: %v", stats["cache_enabled"])
+	}
+	if stats["total_requests"].(int64) != 0 {
+		t.Errorf("无缓存时total_requests应为0，实际: %v", stats["total_requests"])
+	}
+	
+	t.Logf("✅ 无缓存统计正确: %+v", stats)
+}
