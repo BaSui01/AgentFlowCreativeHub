@@ -9,12 +9,30 @@ import (
 
 // Config 应用配置结构
 type Config struct {
-	Server   ServerConfig   `mapstructure:"server"`
-	Database DatabaseConfig `mapstructure:"database"`
-	Redis    RedisConfig    `mapstructure:"redis"`
-	Log      LogConfig      `mapstructure:"log"`
-	AI       AIConfig       `mapstructure:"ai"`
-	RAG      RagConfig      `mapstructure:"rag"`
+	Server    ServerConfig    `mapstructure:"server"`
+	Database  DatabaseConfig  `mapstructure:"database"`
+	Redis     RedisConfig     `mapstructure:"redis"`
+	Log       LogConfig       `mapstructure:"log"`
+	AI        AIConfig        `mapstructure:"ai"`
+	RAG       RagConfig       `mapstructure:"rag"`
+	Workspace WorkspaceConfig `mapstructure:"workspace"`
+	Cache     CacheConfig     `mapstructure:"cache"` // 新增:缓存配置
+}
+
+// WorkspaceConfig 工作区文件系统配置
+type WorkspaceConfig struct {
+	BasePath        string `mapstructure:"base_path"`         // 工作区根目录，默认 ./workspace
+	EnableDiskStore bool   `mapstructure:"enable_disk_store"` // 是否启用磁盘存储
+	MaxFileSize     int64  `mapstructure:"max_file_size"`     // 单文件大小限制（字节），默认 10MB
+	Artifact        ArtifactConfig `mapstructure:"artifact"`
+}
+
+// ArtifactConfig 智能体产出文件配置
+type ArtifactConfig struct {
+	NamingPattern   string `mapstructure:"naming_pattern"`   // 命名模式: {agent}-{type}-{timestamp}-{seq}
+	OrganizeByAgent bool   `mapstructure:"organize_by_agent"` // 按智能体分目录
+	OrganizeBySession bool `mapstructure:"organize_by_session"` // 按会话分目录
+	RetentionDays   int    `mapstructure:"retention_days"`   // 保留天数，0表示永久
 }
 
 // ServerConfig HTTP 服务器配置
@@ -36,14 +54,31 @@ type DatabaseConfig struct {
 	MaxOpenConns    int    `mapstructure:"max_open_conns"`
 	MaxIdleConns    int    `mapstructure:"max_idle_conns"`
 	ConnMaxLifetime int    `mapstructure:"conn_max_lifetime"` // 秒
+	AutoMigrate     bool   `mapstructure:"auto_migrate"`      // 是否自动迁移表结构
 }
 
 // RedisConfig Redis 配置
 type RedisConfig struct {
+	// 连接模式: standalone(单节点), sentinel(哨兵), cluster(集群)
+	Mode string `mapstructure:"mode"`
+
+	// 单节点模式配置
 	Host     string `mapstructure:"host"`
 	Port     int    `mapstructure:"port"`
 	Password string `mapstructure:"password"`
 	DB       int    `mapstructure:"db"`
+
+	// 哨兵模式配置
+	MasterName       string   `mapstructure:"master_name"`        // 主节点名称
+	SentinelAddrs    []string `mapstructure:"sentinel_addrs"`     // 哨兵地址列表
+	SentinelPassword string   `mapstructure:"sentinel_password"`  // 哨兵密码（可选）
+
+	// 集群模式配置
+	ClusterAddrs []string `mapstructure:"cluster_addrs"` // 集群节点地址列表
+
+	// 通用配置
+	PoolSize     int `mapstructure:"pool_size"`      // 连接池大小
+	MinIdleConns int `mapstructure:"min_idle_conns"` // 最小空闲连接数
 }
 
 // LogConfig 日志配置
@@ -93,6 +128,21 @@ type AnthropicConfig struct {
 	APIKey     string `mapstructure:"api_key"`
 	BaseURL    string `mapstructure:"base_url"`
 	MaxRetries int    `mapstructure:"max_retries"`
+}
+
+// CacheConfig 缓存配置
+type CacheConfig struct {
+	Disk DiskCacheConfig `mapstructure:"disk"` // 硬盘缓存(L3层)
+}
+
+// DiskCacheConfig 硬盘缓存配置
+type DiskCacheConfig struct {
+	Enabled         bool   `mapstructure:"enabled"`          // 是否启用硬盘缓存
+	DBPath          string `mapstructure:"db_path"`          // 数据库文件路径
+	MaxSizeGB       int    `mapstructure:"max_size_gb"`      // 最大缓存大小(GB)
+	TTL             string `mapstructure:"ttl"`              // 缓存过期时间(如"720h"表示30天)
+	CleanupInterval string `mapstructure:"cleanup_interval"` // 清理间隔(如"30m")
+	MonitorInterval string `mapstructure:"monitor_interval"` // 监控日志输出间隔(如"5m")
 }
 
 var globalConfig *Config

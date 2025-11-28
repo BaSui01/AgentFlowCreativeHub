@@ -1,0 +1,95 @@
+# 开发环境配置
+
+server:
+  port: 7000
+  mode: debug
+  read_timeout: 60
+  write_timeout: 60
+
+database:
+  host: localhost
+  port: 5432
+  user: postgres
+  password: postgres
+  dbname: agentflow_dev
+  sslmode: disable
+  max_open_conns: 25
+  max_idle_conns: 5
+  conn_max_lifetime: 3600
+
+redis:
+  # 连接模式: standalone(单节点), sentinel(哨兵), cluster(集群)
+  mode: standalone
+  
+  # 单节点模式配置
+  host: localhost
+  port: 6379
+  password: ""
+  db: 7
+  
+  # 哨兵模式配置 (mode=sentinel 时启用)
+  # master_name: mymaster
+  # sentinel_addrs:
+  #   - sentinel1:26379
+  #   - sentinel2:26379
+  #   - sentinel3:26379
+  # sentinel_password: ""
+  
+  # 集群模式配置 (mode=cluster 时启用)
+  # cluster_addrs:
+  #   - node1:6379
+  #   - node2:6379
+  #   - node3:6379
+  
+  # 连接池配置
+  pool_size: 10
+  min_idle_conns: 5
+
+log:
+  level: debug
+  format: console
+  output_path: stdout
+
+ai:
+  openai:
+    api_key: ${OPENAI_API_KEY}
+    base_url: https://api.openai.com/v1
+    org_id: ""
+    max_retries: 3
+
+  anthropic:
+    api_key: ${ANTHROPIC_API_KEY}
+    base_url: https://api.anthropic.com
+    max_retries: 3
+
+rag:
+  vector_store:
+    type: qdrant
+    qdrant:
+      endpoint: http://localhost:6334
+      api_key: ${QDRANT_API_KEY}
+      collection: agentflow_chunks
+      vector_dimension: 1536
+      distance: Cosine
+      timeout_seconds: 15
+
+# 工作区文件系统配置
+workspace:
+  base_path: ./workspace
+  enable_disk_store: false
+  max_file_size: 10485760 # 10MB
+  artifact:
+    naming_pattern: "{agent}-{type}-{timestamp}-{seq}"
+    organize_by_agent: true
+    organize_by_session: false
+    retention_days: 0 # 0 表示永久保留
+
+# 缓存配置
+cache:
+  # 硬盘缓存 (L3层)
+  disk:
+    enabled: true
+    db_path: ./data/cache/llm_cache.db
+    max_size_gb: 10
+    ttl: 720h # 30天
+    cleanup_interval: 30m

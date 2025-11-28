@@ -6,10 +6,11 @@ import type { WorkspaceFileDetailDTO } from '../types';
 interface FilePreviewProps {
   data?: WorkspaceFileDetailDTO;
   saving?: boolean;
-  onSave: (payload: { nodeId: string; content: string }) => void;
+  onSave: (payload: { nodeId: string; content: string; versionId?: string }) => void;
+  canEdit?: boolean;
 }
 
-export const FilePreview: React.FC<FilePreviewProps> = ({ data, saving, onSave }) => {
+export const FilePreview: React.FC<FilePreviewProps> = ({ data, saving, onSave, canEdit = true }) => {
   const contentRef = useRef(data?.version?.content ?? '');
 
   useEffect(() => {
@@ -26,10 +27,11 @@ export const FilePreview: React.FC<FilePreviewProps> = ({ data, saving, onSave }
 
   const handleSave = () => {
     if (!data.node.id) return;
-    onSave({ nodeId: data.node.id, content: contentRef.current });
+    onSave({ nodeId: data.node.id, content: contentRef.current, versionId: data.version?.id });
   };
 
   const handleContentChange = (value: string) => {
+    if (!canEdit) return;
     contentRef.current = value;
   };
 
@@ -42,10 +44,13 @@ export const FilePreview: React.FC<FilePreviewProps> = ({ data, saving, onSave }
             {data.node.nodePath}
           </Typography.Text>
         </div>
-        <Button icon={<SaveOutlined />} type="primary" onClick={handleSave} loading={saving}>
+        <Button icon={<SaveOutlined />} type="primary" onClick={handleSave} loading={saving} disabled={!canEdit}>
           保存
         </Button>
       </Space>
+      {!canEdit && (
+        <Alert message="您没有编辑权限，内容以只读方式展示" type="info" showIcon style={{ marginBottom: 12 }} />
+      )}
       <Input.TextArea
         key={data.version?.id ?? data.node.id}
         defaultValue={data.version?.content ?? ''}
@@ -53,6 +58,7 @@ export const FilePreview: React.FC<FilePreviewProps> = ({ data, saving, onSave }
         rows={20}
         style={{ flex: 1 }}
         placeholder="在此编辑内容"
+        readOnly={!canEdit}
       />
     </div>
   );

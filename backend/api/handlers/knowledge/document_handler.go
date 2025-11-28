@@ -465,3 +465,115 @@ func (h *DocumentHandler) CreateTextDocument(c *gin.Context) {
 
 	c.JSON(http.StatusAccepted, response.APIResponse{Success: true, Message: "文档已提交处理", Data: gin.H{"document_id": doc.ID, "status": "pending"}})
 }
+
+// UpdateDocument 更新知识库文档
+// @Summary 更新文档
+// @Tags KnowledgeBase
+// @Security BearerAuth
+// @Accept json
+// @Produce json
+// @Param id path string true "文档 ID"
+// @Param request body models.UpdateDocumentRequest true "更新文档请求"
+// @Success 200 {object} models.Document
+// @Failure 400 {object} response.ErrorResponse
+// @Failure 403 {object} response.ErrorResponse
+// @Failure 404 {object} response.ErrorResponse
+// @Failure 500 {object} response.ErrorResponse
+// @Router /api/documents/{id} [put]
+func (h *DocumentHandler) UpdateDocument(c *gin.Context) {
+	docID := c.Param("id")
+	if docID == "" {
+		c.JSON(http.StatusBadRequest, response.ErrorResponse{Success: false, Message: "缺少文档 ID"})
+		return
+	}
+
+	var req models.UpdateDocumentRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, response.ErrorResponse{Success: false, Message: "参数错误: " + err.Error()})
+		return
+	}
+
+	// 获取用户上下文
+	userCtx, exists := auth.GetUserContext(c)
+	if !exists {
+		c.JSON(http.StatusUnauthorized, response.ErrorResponse{Success: false, Message: "未认证"})
+		return
+	}
+
+	// 获取现有文档
+	doc, err := h.docService.GetDocument(c.Request.Context(), docID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, response.ErrorResponse{Success: false, Message: "查询文档失败: " + err.Error()})
+		return
+	}
+
+	if doc == nil {
+		c.JSON(http.StatusNotFound, response.ErrorResponse{Success: false, Message: "文档不存在"})
+		return
+	}
+
+	// 检查租户权限
+	if doc.TenantID != userCtx.TenantID {
+		c.JSON(http.StatusForbidden, response.ErrorResponse{Success: false, Message: "无权访问该文档"})
+		return
+	}
+
+	// 验证知识库权限
+	kb, err := h.kbService.GetKnowledgeBase(c.Request.Context(), doc.KnowledgeBaseID)
+	if err != nil || kb == nil {
+		c.JSON(http.StatusInternalServerError, response.ErrorResponse{Success: false, Message: "查询知识库失败"})
+		return
+	}
+
+	// 只有知识库创建者可以编辑文档
+	if kb.CreatedBy != userCtx.UserID {
+		c.JSON(http.StatusForbidden, response.ErrorResponse{Success: false, Message: "无权编辑该文档"})
+		return
+	}
+
+	// 更新文档字段
+	contentChanged := false
+	if req.Title != "" && req.Title != doc.Title {
+		doc.Title = req.Title
+	}
+	if req.Content != "" && req.Content != doc.Content {
+		doc.Content = req.Content
+		doc.CharCount = len([]rune(req.Content))
+		doc.FileSize = int64(len(req.Content))
+		contentChanged = true
+	}
+	if req.Metadata != nil {
+		if doc.Metadata == nil {
+			doc.Metadata = make(map[string]interface{})
+		}
+		for k, v := range req.Metadata {
+			doc.Metadata[k] = v
+		}
+	}
+	if req.Status != "" && req.Status != doc.Status {
+		doc.Status = req.Status
+	}
+
+	// 调用service层更新
+	updatedDoc, err := h.docService.UpdateDocument(c.Request.Context(), userCtx.TenantID, docID, &req)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, response.ErrorResponse{Success: false, Message: "更新文档失败: " + err.Error()})
+		return
+	}
+
+	// 如果内容变更，触发重新分块和向量化（异步）
+	if contentChanged {
+		go func() {
+			ctx := c.Request.Context()
+			if err := h.ragService.ProcessDocument(ctx, doc.ID); err != nil {
+				fmt.Printf("重新处理文档失败: %v\n", err)
+			}
+		}()
+	}
+
+	// 设置审计信息
+	auditpkg.SetAuditResourceInfo(c, "document", docID)
+	auditpkg.SetAuditMetadata(c, "knowledge_base_id", doc.KnowledgeBaseID)
+
+	c.JSON(http.StatusOK, updatedDoc)
+}

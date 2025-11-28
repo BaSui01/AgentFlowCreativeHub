@@ -124,3 +124,226 @@ func TestUnregisterToolRequiresOwnership(t *testing.T) {
 		t.Fatalf("tool should still exist after forbidden request")
 	}
 }
+
+
+// ============================================================
+// HTTP Integration Tests - 测试GetTool和ExecuteTool
+// ============================================================
+
+// TestGetTool_HTTP 测试获取工具详情HTTP接口
+func TestGetTool_HTTP(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	t.Run("HTTP_成功返回工具详情", func(t *testing.T) {
+		handler := setupHandler()
+		
+		// 注册一个工具
+		def := &tools.ToolDefinition{
+			ID:          "test-tool-1",
+			TenantID:    "",  // 系统工具
+			Name:        "test_tool",
+			DisplayName: "Test Tool",
+			Description: "A test tool",
+			Category:    "api",
+			Type:        "http_api",
+			HTTPConfig: &tools.HTTPToolConfig{
+				Method: "GET",
+				URL:    "https://example.com/test",
+			},
+		}
+		handler.registry.Register("test_tool", tools.NewDynamicHTTPTool(def), def)
+
+		router := gin.New()
+		router.GET("/api/tools/:name", func(c *gin.Context) {
+			c.Set("tenant_id", "tenant-1")
+			handler.GetTool(c)
+		})
+
+		w := httptest.NewRecorder()
+		req, _ := http.NewRequest("GET", "/api/tools/test_tool", nil)
+		router.ServeHTTP(w, req)
+
+		if w.Code != http.StatusOK {
+			t.Fatalf("expected status 200, got %d, body: %s", w.Code, w.Body.String())
+		}
+
+		var respDef tools.ToolDefinition
+		if err := json.Unmarshal(w.Body.Bytes(), &respDef); err != nil {
+			t.Fatalf("failed to unmarshal response: %v", err)
+		}
+		if respDef.Name != "test_tool" {
+			t.Fatalf("expected tool name test_tool, got %s", respDef.Name)
+		}
+	})
+
+	t.Run("HTTP_工具不存在返回404", func(t *testing.T) {
+		handler := setupHandler()
+
+		router := gin.New()
+		router.GET("/api/tools/:name", func(c *gin.Context) {
+			c.Set("tenant_id", "tenant-1")
+			handler.GetTool(c)
+		})
+
+		w := httptest.NewRecorder()
+		req, _ := http.NewRequest("GET", "/api/tools/nonexistent_tool", nil)
+		router.ServeHTTP(w, req)
+
+		if w.Code != http.StatusNotFound {
+			t.Fatalf("expected status 404, got %d", w.Code)
+		}
+	})
+
+	t.Run("HTTP_跨租户访问私有工具返回404", func(t *testing.T) {
+		handler := setupHandler()
+		
+		// 注册租户私有工具
+		def := &tools.ToolDefinition{
+			ID:          "private-tool-1",
+			TenantID:    "tenant-1",  // 租户1的私有工具
+			Name:        "private_tool",
+			DisplayName: "Private Tool",
+			Description: "A private tool",
+			Category:    "api",
+			Type:        "http_api",
+			HTTPConfig: &tools.HTTPToolConfig{
+				Method: "GET",
+				URL:    "https://example.com/private",
+			},
+		}
+		handler.registry.Register("private_tool", tools.NewDynamicHTTPTool(def), def)
+
+		router := gin.New()
+		router.GET("/api/tools/:name", func(c *gin.Context) {
+			c.Set("tenant_id", "tenant-2")  // 租户2尝试访问
+			handler.GetTool(c)
+		})
+
+		w := httptest.NewRecorder()
+		req, _ := http.NewRequest("GET", "/api/tools/private_tool", nil)
+		router.ServeHTTP(w, req)
+
+		if w.Code != http.StatusNotFound {
+			t.Fatalf("expected status 404 for cross-tenant access, got %d", w.Code)
+		}
+	})
+}
+
+// TestExecuteTool_HTTP 测试执行工具HTTP接口
+func TestExecuteTool_HTTP(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	t.Run("HTTP_成功执行工具", func(t *testing.T) {
+		handler := setupHandler()
+		
+		// 注册一个简单的测试工具
+		def := &tools.ToolDefinition{
+			ID:          "echo-tool",
+			TenantID:    "",
+			Name:        "echo_tool",
+			DisplayName: "Echo Tool",
+			Description: "Returns input",
+			Category:    "utility",
+			Type:        "http_api",
+			HTTPConfig: &tools.HTTPToolConfig{
+				Method: "POST",
+				URL:    "https://httpbin.org/post",
+			},
+		}
+		handler.registry.Register("echo_tool", tools.NewDynamicHTTPTool(def), def)
+
+		router := gin.New()
+		router.POST("/api/tools/:name/execute", func(c *gin.Context) {
+			c.Set("tenant_id", "tenant-1")
+			c.Set("user_id", "user-1")
+			handler.ExecuteTool(c)
+		})
+
+		requestBody := map[string]any{
+			"input": map[string]any{
+				"message": "test message",
+			},
+		}
+		bodyBytes, _ := json.Marshal(requestBody)
+
+		w := httptest.NewRecorder()
+		req, _ := http.NewRequest("POST", "/api/tools/echo_tool/execute", bytes.NewBuffer(bodyBytes))
+		req.Header.Set("Content-Type", "application/json")
+		router.ServeHTTP(w, req)
+
+		if w.Code != http.StatusOK {
+			t.Fatalf("expected status 200, got %d, body: %s", w.Code, w.Body.String())
+		}
+
+		var resp map[string]any
+		if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+			t.Fatalf("failed to unmarshal response: %v", err)
+		}
+		if resp["tool_name"] != "echo_tool" {
+			t.Fatalf("expected tool_name echo_tool, got %v", resp["tool_name"])
+		}
+	})
+
+	t.Run("HTTP_工具不存在返回404", func(t *testing.T) {
+		handler := setupHandler()
+
+		router := gin.New()
+		router.POST("/api/tools/:name/execute", func(c *gin.Context) {
+			c.Set("tenant_id", "tenant-1")
+			c.Set("user_id", "user-1")
+			handler.ExecuteTool(c)
+		})
+
+		requestBody := map[string]any{
+			"input": map[string]any{
+				"test": "data",
+			},
+		}
+		bodyBytes, _ := json.Marshal(requestBody)
+
+		w := httptest.NewRecorder()
+		req, _ := http.NewRequest("POST", "/api/tools/nonexistent_tool/execute", bytes.NewBuffer(bodyBytes))
+		req.Header.Set("Content-Type", "application/json")
+		router.ServeHTTP(w, req)
+
+		if w.Code != http.StatusNotFound {
+			t.Fatalf("expected status 404, got %d", w.Code)
+		}
+	})
+
+	t.Run("HTTP_参数错误返回400", func(t *testing.T) {
+		handler := setupHandler()
+		
+		// 注册工具
+		def := &tools.ToolDefinition{
+			ID:          "test-tool-2",
+			TenantID:    "",
+			Name:        "test_tool_2",
+			DisplayName: "Test Tool 2",
+			Description: "Test tool",
+			Category:    "api",
+			Type:        "http_api",
+			HTTPConfig: &tools.HTTPToolConfig{
+				Method: "GET",
+				URL:    "https://example.com",
+			},
+		}
+		handler.registry.Register("test_tool_2", tools.NewDynamicHTTPTool(def), def)
+
+		router := gin.New()
+		router.POST("/api/tools/:name/execute", func(c *gin.Context) {
+			c.Set("tenant_id", "tenant-1")
+			c.Set("user_id", "user-1")
+			handler.ExecuteTool(c)
+		})
+
+		w := httptest.NewRecorder()
+		req, _ := http.NewRequest("POST", "/api/tools/test_tool_2/execute", bytes.NewBufferString("invalid json"))
+		req.Header.Set("Content-Type", "application/json")
+		router.ServeHTTP(w, req)
+
+		if w.Code != http.StatusBadRequest {
+			t.Fatalf("expected status 400, got %d", w.Code)
+		}
+	})
+}

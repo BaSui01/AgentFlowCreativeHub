@@ -43,7 +43,7 @@ func (e *AutomationEngine) SetApprovalNotifier(notifier *notification.MultiNotif
 // NewAutomationEngine 创建自动化执行引擎
 func NewAutomationEngine(
 	db *gorm.DB,
-	redisClient *redis.Client,
+	redisClient redis.UniversalClient,
 	agentRegistry *runtime.Registry,
 	queueClient queue.Client,
 	auditService audit.AuditService,

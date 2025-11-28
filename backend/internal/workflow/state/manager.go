@@ -25,11 +25,11 @@ type WorkflowState struct {
 
 // StateManager 状态管理器
 type StateManager struct {
-	redis *redis.Client
+	redis redis.UniversalClient
 }
 
 // NewStateManager 创建状态管理器
-func NewStateManager(redisClient *redis.Client) *StateManager {
+func NewStateManager(redisClient redis.UniversalClient) *StateManager {
 	return &StateManager{
 		redis: redisClient,
 	}

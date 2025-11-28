@@ -52,6 +52,8 @@ type AgentRunPayload struct {
 	TraceID     string         `json:"trace_id"`
 	UserID      string         `json:"user_id"`
 	TenantID    string         `json:"tenant_id"`
+	CommandID   string         `json:"command_id,omitempty"`
+	DeadlineMs  int64          `json:"deadline_ms,omitempty"`
 }
 
 // EnqueueAgentRun 将 Agent 执行任务加入队列

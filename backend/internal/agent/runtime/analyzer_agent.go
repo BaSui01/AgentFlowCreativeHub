@@ -11,21 +11,23 @@ import (
 
 // AnalyzerAgent 数据分析 Agent
 type AnalyzerAgent struct {
-	config      *AgentConfig
-	modelClient ai.ModelClient
-	ragHelper   *RAGHelper
+	config       *AgentConfig
+	modelClient  ai.ModelClient
+	ragHelper    *RAGHelper
+	toolHelper   *ToolHelper
 	promptEngine *prompt.Engine
-	name        string
+	name         string
 }
 
 // NewAnalyzerAgent 创建 AnalyzerAgent
-func NewAnalyzerAgent(config *AgentConfig, modelClient ai.ModelClient, ragHelper *RAGHelper, promptEngine *prompt.Engine) *AnalyzerAgent {
+func NewAnalyzerAgent(config *AgentConfig, modelClient ai.ModelClient, ragHelper *RAGHelper, promptEngine *prompt.Engine, toolHelper *ToolHelper) *AnalyzerAgent {
 	return &AnalyzerAgent{
-		config:      config,
-		modelClient: modelClient,
-		ragHelper:   ragHelper,
+		config:       config,
+		modelClient:  modelClient,
+		ragHelper:    ragHelper,
+		toolHelper:   toolHelper,
 		promptEngine: promptEngine,
-		name:        config.Name,
+		name:         config.Name,
 	}
 }
 
@@ -52,37 +54,76 @@ func (a *AnalyzerAgent) Execute(ctx context.Context, input *AgentInput) (*AgentR
 		}, err
 	}
 
-	// 调用 AI 模型
-	resp, err := a.modelClient.ChatCompletion(ctx, &ai.ChatCompletionRequest{
-		Messages:    messages,
-		Temperature: a.config.Temperature,
-		MaxTokens:   a.config.MaxTokens,
-	})
+	var output string
+	var usage *Usage
+	var modelID string
 
-	latency := time.Since(start).Milliseconds()
+	// 检查是否允许使用工具
+	if a.toolHelper != nil && len(a.config.AllowedTools) > 0 {
+		resp, err := a.toolHelper.ExecuteWithTools(
+			ctx,
+			a.modelClient,
+			messages,
+			a.config.Temperature,
+			a.config.MaxTokens,
+			input.Context.TenantID,
+			input.Context.UserID,
+			a.config.AllowedTools,
+		)
 
-	if err != nil {
-		return &AgentResult{
-			Output:    "",
-			Status:    "failed",
-			Error:     err.Error(),
-			LatencyMs: latency,
-		}, err
-	}
+		if err != nil {
+			return &AgentResult{
+				Output:    "",
+				Status:    "failed",
+				Error:     err.Error(),
+				LatencyMs: time.Since(start).Milliseconds(),
+			}, err
+		}
 
-	// 构建结果
-	result := &AgentResult{
-		Output: resp.Content,
-		Usage: &Usage{
+		output = resp.Content
+		usage = &Usage{
 			PromptTokens:     resp.Usage.PromptTokens,
 			CompletionTokens: resp.Usage.CompletionTokens,
 			TotalTokens:      resp.Usage.TotalTokens,
-		},
-		Cost:      calculateCost(resp.Usage.PromptTokens, resp.Usage.CompletionTokens),
+		}
+		modelID = resp.Model
+	} else {
+		// 调用 AI 模型
+		resp, err := a.modelClient.ChatCompletion(ctx, &ai.ChatCompletionRequest{
+			Messages:    messages,
+			Temperature: a.config.Temperature,
+			MaxTokens:   a.config.MaxTokens,
+		})
+
+		if err != nil {
+			return &AgentResult{
+				Output:    "",
+				Status:    "failed",
+				Error:     err.Error(),
+				LatencyMs: time.Since(start).Milliseconds(),
+			}, err
+		}
+
+		output = resp.Content
+		usage = &Usage{
+			PromptTokens:     resp.Usage.PromptTokens,
+			CompletionTokens: resp.Usage.CompletionTokens,
+			TotalTokens:      resp.Usage.TotalTokens,
+		}
+		modelID = resp.Model
+	}
+
+	latency := time.Since(start).Milliseconds()
+
+	// 构建结果
+	result := &AgentResult{
+		Output:    output,
+		Usage:     usage,
+		Cost:      calculateCost(usage.PromptTokens, usage.CompletionTokens),
 		LatencyMs: latency,
 		Status:    "success",
 		Metadata: map[string]any{
-			"model_id": resp.Model,
+			"model_id": modelID,
 		},
 	}
 

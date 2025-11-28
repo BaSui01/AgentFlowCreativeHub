@@ -11,6 +11,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/assert"
 
+	response "backend/api/handlers/common"
 	"backend/internal/auth"
 	tenantSvc "backend/internal/tenant"
 )
@@ -21,6 +22,7 @@ type fakeRoleService struct {
 	lastUpdate   tenantSvc.UpdateRoleParams
 	lastUpdateID string
 	permissions  []*tenantSvc.Permission
+	userRoles    map[string][]string
 }
 
 func (f *fakeRoleService) CreateRole(ctx context.Context, params tenantSvc.CreateRoleParams) (*tenantSvc.Role, error) {
@@ -44,6 +46,10 @@ func (f *fakeRoleService) AssignRoleToUser(ctx context.Context, userID, roleID s
 	return nil
 }
 
+func (f *fakeRoleService) ReplaceUserRoles(ctx context.Context, userID string, roleIDs []string) error {
+	return nil
+}
+
 func (f *fakeRoleService) UpdateRolePermissions(ctx context.Context, roleID string, permissionIDs []string) error {
 	return nil
 }
@@ -52,9 +58,22 @@ func (f *fakeRoleService) GetUserPermissions(ctx context.Context, userID string)
 	return nil, nil
 }
 
+func (f *fakeRoleService) ListUserRoles(ctx context.Context, userID string) ([]string, error) {
+	f.lastCtx = ctx
+	if f.userRoles == nil {
+		return nil, nil
+	}
+	roles := f.userRoles[userID]
+	return append([]string(nil), roles...), nil
+}
+
 func (f *fakeRoleService) ListPermissions(ctx context.Context) ([]*tenantSvc.Permission, error) {
 	f.lastCtx = ctx
 	return f.permissions, nil
+}
+
+func (f *fakeRoleService) ListRoles(ctx context.Context) ([]*tenantSvc.RoleWithPermissions, error) {
+	return nil, nil
 }
 
 func TestTenantHandler_CreateRole_WithPermissions(t *testing.T) {
@@ -117,4 +136,30 @@ func TestTenantHandler_ListPermissions(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Len(t, body.Items, 2)
 	assert.Equal(t, "posts", body.Items[0].Resource)
+}
+
+func TestTenantHandler_ListUserRoles(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	service := &fakeRoleService{userRoles: map[string][]string{
+		"user-1": {"role-a", "role-b"},
+	}}
+	h := NewTenantHandler(nil, nil, service, nil, nil)
+	resp := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(resp)
+
+	c.Params = []gin.Param{{Key: "id", Value: "tenant-1"}, {Key: "userId", Value: "user-1"}}
+	c.Request = httptest.NewRequest(http.MethodGet, "/api/tenants/tenant-1/users/user-1/roles", nil)
+	c.Set("tenant_id", "tenant-1")
+	c.Set(string(auth.UserContextKey), &auth.UserContext{TenantID: "tenant-1", UserID: "admin"})
+
+	h.ListUserRoles(c)
+
+	assert.Equal(t, http.StatusOK, resp.Code)
+	var body response.ListResponse
+	assert.NoError(t, json.Unmarshal(resp.Body.Bytes(), &body))
+	items, ok := body.Items.([]interface{})
+	if !ok {
+		t.Fatalf("unexpected items type: %T", body.Items)
+	}
+	assert.Len(t, items, 2)
 }

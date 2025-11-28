@@ -95,6 +95,7 @@ type ListModelsRequest struct {
 	Provider string // openai, anthropic, custom
 	Type     string // chat, embedding
 	Status   string // active, deprecated, disabled
+	UserTier string // 用户会员等级，用于过滤可用模型（free, basic, pro, enterprise）
 	Page     int
 	PageSize int
 }
@@ -121,7 +122,7 @@ func (s *ModelService) ListModels(ctx context.Context, req *ListModelsRequest) (
 	if pageSize > 100 {
 		pageSize = 100
 	}
-	cacheKey := fmt.Sprintf("%s|%s|%s|%s|%d|%d", req.TenantID, req.Provider, req.Type, req.Status, page, pageSize)
+	cacheKey := fmt.Sprintf("%s|%s|%s|%s|%s|%d|%d", req.TenantID, req.Provider, req.Type, req.Status, req.UserTier, page, pageSize)
 	if cached, ok := s.cache.get(cacheKey); ok {
 		return cached, nil
 	}
@@ -149,6 +150,11 @@ func (s *ModelService) ListModels(ctx context.Context, req *ListModelsRequest) (
 	// 状态过滤
 	if req.Status != "" {
 		query = query.Where("status = ?", req.Status)
+	}
+
+	// 会员等级过滤：空数组表示所有等级可用，否则检查是否包含用户等级
+	if req.UserTier != "" {
+		query = query.Where("(allowed_tiers = '[]'::jsonb OR allowed_tiers IS NULL OR allowed_tiers @> ?::jsonb)", fmt.Sprintf(`["%s"]`, req.UserTier))
 	}
 
 	// 统计总数
@@ -204,18 +210,43 @@ func (s *ModelService) GetModel(ctx context.Context, tenantID, modelID string) (
 
 // CreateModelRequest 创建模型请求
 type CreateModelRequest struct {
-	TenantID           string
-	Name               string
-	Provider           string
-	ModelIdentifier    string
-	Type               string
-	Description        string
-	Capabilities       map[string]any
-	InputCostPer1K     float64
-	OutputCostPer1K    float64
-	MaxTokens          int
-	ContextWindow      int
+	TenantID        string
+	Name            string
+	Provider        string
+	ModelIdentifier string
+	Type            string
+	Category        string // chat, image, audio, video, embedding, rerank
+	Description     string
+	// 能力配置
+	Capabilities            map[string]any
+	Features                ModelFeatures
+	SupportsStreaming       bool
+	SupportsFunctionCalling bool
+	// 成本配置
+	InputCostPer1K  float64
+	OutputCostPer1K float64
+	// 限制配置
+	MaxTokens       int
+	ContextWindow   int
+	RateLimitPerMin int
+	LatencySloMs    int
+	// API 配置
+	BaseURL    string
+	APIVersion string
+	APIFormat  string // openai, claude, gemini, deepseek, custom
+	Region     string
+	// 语言支持
 	SupportedLanguages []string
+	// 状态配置
+	Status    string
+	IsBuiltin bool
+	IsActive  bool
+	// 会员等级权限
+	AllowedTiers []string
+	// 凭证配置
+	DefaultCredentialID string
+	// 元数据
+	Metadata map[string]any
 }
 
 // CreateModel 创建模型配置
@@ -239,7 +270,7 @@ func (s *ModelService) CreateModel(ctx context.Context, req *CreateModelRequest)
 	if err := s.db.WithContext(ctx).
 		Model(&Model{}).
 		Scopes(common.NotDeleted()).
-		Where("tenant_id = ? AND provider = ? AND model_identifier = ?", 
+		Where("tenant_id = ? AND provider = ? AND model_identifier = ?",
 			req.TenantID, req.Provider, req.ModelIdentifier).
 		Count(&count).Error; err != nil {
 		return nil, fmt.Errorf("检查模型是否存在失败: %w", err)
@@ -248,24 +279,66 @@ func (s *ModelService) CreateModel(ctx context.Context, req *CreateModelRequest)
 		return nil, fmt.Errorf("模型已存在")
 	}
 
+	// 设置默认值
+	status := req.Status
+	if status == "" {
+		status = "active"
+	}
+	category := req.Category
+	if category == "" {
+		category = "chat"
+	}
+	apiFormat := req.APIFormat
+	if apiFormat == "" {
+		apiFormat = "openai"
+	}
+	isActive := req.IsActive
+	if !req.IsBuiltin && !req.IsActive {
+		isActive = true // 默认启用
+	}
+
 	// 创建模型
 	model := &Model{
-		ID:                 uuid.New().String(),
-		TenantID:           req.TenantID,
-		Name:               req.Name,
-		Provider:           req.Provider,
-		ModelIdentifier:    req.ModelIdentifier,
-		Type:               req.Type,
-		Description:        req.Description,
-		Capabilities:       req.Capabilities,
-		InputCostPer1K:     req.InputCostPer1K,
-		OutputCostPer1K:    req.OutputCostPer1K,
-		MaxTokens:          req.MaxTokens,
-		ContextWindow:      req.ContextWindow,
+		ID:              uuid.New().String(),
+		TenantID:        req.TenantID,
+		Name:            req.Name,
+		Provider:        req.Provider,
+		ModelIdentifier: req.ModelIdentifier,
+		Type:            req.Type,
+		Category:        category,
+		Description:     req.Description,
+		// 能力配置
+		Capabilities:            req.Capabilities,
+		Features:                req.Features,
+		SupportsStreaming:       req.SupportsStreaming,
+		SupportsFunctionCalling: req.SupportsFunctionCalling,
+		// 成本配置
+		InputCostPer1K:  req.InputCostPer1K,
+		OutputCostPer1K: req.OutputCostPer1K,
+		// 限制配置
+		MaxTokens:       req.MaxTokens,
+		ContextWindow:   req.ContextWindow,
+		RateLimitPerMin: req.RateLimitPerMin,
+		LatencySloMs:    req.LatencySloMs,
+		// API 配置
+		BaseURL:    req.BaseURL,
+		APIVersion: req.APIVersion,
+		APIFormat:  apiFormat,
+		Region:     req.Region,
+		// 语言支持
 		SupportedLanguages: req.SupportedLanguages,
-		Status:             "active",
-		CreatedAt:          time.Now().UTC(),
-		UpdatedAt:          time.Now().UTC(),
+		// 状态配置
+		Status:    status,
+		IsBuiltin: req.IsBuiltin,
+		IsActive:  isActive,
+		// 会员等级权限
+		AllowedTiers: req.AllowedTiers,
+		// 凭证配置
+		DefaultCredentialID: req.DefaultCredentialID,
+		// 元数据
+		Metadata:  req.Metadata,
+		CreatedAt: time.Now().UTC(),
+		UpdatedAt: time.Now().UTC(),
 	}
 
 	if err := s.db.WithContext(ctx).Create(model).Error; err != nil {
@@ -279,15 +352,38 @@ func (s *ModelService) CreateModel(ctx context.Context, req *CreateModelRequest)
 
 // UpdateModelRequest 更新模型请求
 type UpdateModelRequest struct {
-	Name               *string
-	Description        *string
-	Capabilities       map[string]any
-	InputCostPer1K     *float64
-	OutputCostPer1K    *float64
-	MaxTokens          *int
-	ContextWindow      *int
+	Name        *string
+	Description *string
+	Category    *string
+	// 能力配置
+	Capabilities            map[string]any
+	Features                *ModelFeatures
+	SupportsStreaming       *bool
+	SupportsFunctionCalling *bool
+	// 成本配置
+	InputCostPer1K  *float64
+	OutputCostPer1K *float64
+	// 限制配置
+	MaxTokens       *int
+	ContextWindow   *int
+	RateLimitPerMin *int
+	LatencySloMs    *int
+	// API 配置
+	BaseURL    *string
+	APIVersion *string
+	APIFormat  *string
+	Region     *string
+	// 语言支持
 	SupportedLanguages []string
-	Status             *string
+	// 状态配置
+	Status   *string
+	IsActive *bool
+	// 会员等级权限
+	AllowedTiers []string
+	// 凭证配置
+	DefaultCredentialID *string
+	// 元数据
+	Metadata map[string]any
 }
 
 // UpdateModel 更新模型配置
@@ -306,26 +402,77 @@ func (s *ModelService) UpdateModel(ctx context.Context, tenantID, modelID string
 	if req.Description != nil {
 		updates["description"] = *req.Description
 	}
+	if req.Category != nil {
+		updates["category"] = *req.Category
+	}
+	// 能力配置
 	if req.Capabilities != nil {
 		updates["capabilities"] = req.Capabilities
 	}
+	if req.Features != nil {
+		updates["features"] = *req.Features
+	}
+	if req.SupportsStreaming != nil {
+		updates["supports_streaming"] = *req.SupportsStreaming
+	}
+	if req.SupportsFunctionCalling != nil {
+		updates["supports_function_calling"] = *req.SupportsFunctionCalling
+	}
+	// 成本配置
 	if req.InputCostPer1K != nil {
 		updates["input_cost_per_1k"] = *req.InputCostPer1K
 	}
 	if req.OutputCostPer1K != nil {
 		updates["output_cost_per_1k"] = *req.OutputCostPer1K
 	}
+	// 限制配置
 	if req.MaxTokens != nil {
 		updates["max_tokens"] = *req.MaxTokens
 	}
 	if req.ContextWindow != nil {
 		updates["context_window"] = *req.ContextWindow
 	}
+	if req.RateLimitPerMin != nil {
+		updates["rate_limit_per_min"] = *req.RateLimitPerMin
+	}
+	if req.LatencySloMs != nil {
+		updates["latency_slo_ms"] = *req.LatencySloMs
+	}
+	// API 配置
+	if req.BaseURL != nil {
+		updates["base_url"] = *req.BaseURL
+	}
+	if req.APIVersion != nil {
+		updates["api_version"] = *req.APIVersion
+	}
+	if req.APIFormat != nil {
+		updates["api_format"] = *req.APIFormat
+	}
+	if req.Region != nil {
+		updates["region"] = *req.Region
+	}
+	// 语言支持
 	if req.SupportedLanguages != nil {
 		updates["supported_languages"] = req.SupportedLanguages
 	}
+	// 状态配置
 	if req.Status != nil {
 		updates["status"] = *req.Status
+	}
+	if req.IsActive != nil {
+		updates["is_active"] = *req.IsActive
+	}
+	// 会员等级权限
+	if req.AllowedTiers != nil {
+		updates["allowed_tiers"] = req.AllowedTiers
+	}
+	// 凭证配置
+	if req.DefaultCredentialID != nil {
+		updates["default_credential_id"] = *req.DefaultCredentialID
+	}
+	// 元数据
+	if req.Metadata != nil {
+		updates["metadata"] = req.Metadata
 	}
 	updates["updated_at"] = time.Now().UTC()
 
@@ -336,7 +483,7 @@ func (s *ModelService) UpdateModel(ctx context.Context, tenantID, modelID string
 		return nil, fmt.Errorf("更新模型失败: %w", err)
 	}
 
-s.cache.invalidateTenant(tenantID)
+	s.cache.invalidateTenant(tenantID)
 
 	// 重新查询返回最新数据
 	return s.GetModel(ctx, tenantID, modelID)
@@ -362,7 +509,7 @@ func (s *ModelService) DeleteModel(ctx context.Context, tenantID, modelID, opera
 		return fmt.Errorf("删除模型失败: %w", err)
 	}
 
-s.cache.invalidateTenant(tenantID)
+	s.cache.invalidateTenant(tenantID)
 
 	return nil
 }
@@ -444,6 +591,41 @@ func (s *ModelService) SeedDefaultModels(ctx context.Context, tenantID string) e
 			ContextWindow:      8191,
 			SupportedLanguages: []string{"zh", "en", "ja", "ko"},
 		},
+		// Google Gemini
+		{
+			TenantID:        tenantID,
+			Name:            "Gemini 1.5 Pro",
+			Provider:        "gemini",
+			ModelIdentifier: "gemini-1.5-pro",
+			Type:            "chat",
+			Description:     "Google Gemini 旗舰模型，支持长上下文与多模态",
+			Capabilities: map[string]any{
+				"streaming":        true,
+				"function_calling": true,
+				"vision":           true,
+			},
+			InputCostPer1K:     0.0025,
+			OutputCostPer1K:    0.0075,
+			MaxTokens:          8192,
+			ContextWindow:      2000000,
+			SupportedLanguages: []string{"zh", "en", "ja", "ko"},
+		},
+		{
+			TenantID:        tenantID,
+			Name:            "Gemini Embedding 001",
+			Provider:        "gemini",
+			ModelIdentifier: "gemini-embedding-001",
+			Type:            "embedding",
+			Description:     "Google Gemini 官方向量化模型",
+			Capabilities: map[string]any{
+				"dimensions": 3072,
+			},
+			InputCostPer1K:     0.00013,
+			OutputCostPer1K:    0,
+			MaxTokens:          2048,
+			ContextWindow:      2048,
+			SupportedLanguages: []string{"zh", "en", "ja", "ko"},
+		},
 	}
 
 	// 批量创建
@@ -463,13 +645,13 @@ func (s *ModelService) SeedDefaultModels(ctx context.Context, tenantID string) e
 // GetModelCallStats 获取模型调用统计
 func (s *ModelService) GetModelCallStats(ctx context.Context, tenantID, modelID string, startTime, endTime time.Time) (map[string]any, error) {
 	var stats struct {
-		TotalCalls       int64   `json:"total_calls"`
-		TotalTokens      int64   `json:"total_tokens"`
-		TotalCost        float64 `json:"total_cost"`
-		AvgLatencyMs     float64 `json:"avg_latency_ms"`
-		SuccessRate      float64 `json:"success_rate"`
-		TotalPromptTokens int64  `json:"total_prompt_tokens"`
-		TotalCompletionTokens int64 `json:"total_completion_tokens"`
+		TotalCalls            int64   `json:"total_calls"`
+		TotalTokens           int64   `json:"total_tokens"`
+		TotalCost             float64 `json:"total_cost"`
+		AvgLatencyMs          float64 `json:"avg_latency_ms"`
+		SuccessRate           float64 `json:"success_rate"`
+		TotalPromptTokens     int64   `json:"total_prompt_tokens"`
+		TotalCompletionTokens int64   `json:"total_completion_tokens"`
 	}
 
 	query := s.db.WithContext(ctx).

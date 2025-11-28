@@ -2,27 +2,33 @@ package builtin
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
-	"io"
-	"net/http"
 	"net/url"
 	"time"
 
 	"backend/internal/tools"
+	"backend/pkg/httputil"
 )
 
 // SearchTool 搜索引擎工具（基于 DuckDuckGo Instant Answer API）
 type SearchTool struct {
-	client *http.Client
+	client *httputil.CachedClient
 }
 
 // NewSearchTool 创建搜索工具
 func NewSearchTool() *SearchTool {
+	// 创建基础HTTP客户端
+	baseClient := httputil.NewClient(
+		httputil.WithTimeout(30*time.Second),
+	)
+
+	// 创建带缓存的客户端，缓存搜索结果1小时
+	cachedClient := httputil.NewCachedClient(baseClient,
+		httputil.WithCacheTTL(1*time.Hour),
+	)
+
 	return &SearchTool{
-		client: &http.Client{
-			Timeout: 30 * time.Second,
-		},
+		client: cachedClient,
 	}
 }
 
@@ -49,33 +55,10 @@ func (t *SearchTool) Execute(ctx context.Context, input map[string]any) (map[str
 	apiURL := fmt.Sprintf("https://api.duckduckgo.com/?q=%s&format=json&no_html=1&skip_disambig=1", 
 		url.QueryEscape(query))
 	
-	// 发送请求
-	req, err := http.NewRequestWithContext(ctx, "GET", apiURL, nil)
-	if err != nil {
-		return nil, fmt.Errorf("创建请求失败: %w", err)
-	}
-	
-	req.Header.Set("User-Agent", "AgentFlowCreativeHub/1.0")
-	
-	resp, err := t.client.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("搜索请求失败: %w", err)
-	}
-	defer resp.Body.Close()
-	
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("搜索 API 返回错误状态: %d", resp.StatusCode)
-	}
-	
-	// 解析响应
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, fmt.Errorf("读取响应失败: %w", err)
-	}
-	
+	// 使用带缓存的HTTP客户端发送请求并解析JSON
 	var result map[string]any
-	if err := json.Unmarshal(body, &result); err != nil {
-		return nil, fmt.Errorf("解析响应失败: %w", err)
+	if err := t.client.GetJSON(ctx, apiURL, &result); err != nil {
+		return nil, fmt.Errorf("搜索请求失败: %w", err)
 	}
 	
 	// 提取相关结果

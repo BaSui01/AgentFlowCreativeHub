@@ -14,6 +14,7 @@ interface FileExplorerProps {
   selectedNodeId?: string;
   onCreateFolder: () => void;
   onRefresh: () => void;
+  canManage?: boolean;
 }
 
 export const FileExplorer: React.FC<FileExplorerProps> = ({
@@ -23,6 +24,7 @@ export const FileExplorer: React.FC<FileExplorerProps> = ({
   onSelect,
   onCreateFolder,
   onRefresh,
+  canManage = true,
 }) => {
   const treeData = toTreeData(nodes);
 
@@ -36,7 +38,7 @@ export const FileExplorer: React.FC<FileExplorerProps> = ({
   return (
     <div style={{ borderRight: '1px solid #f0f0f0', paddingRight: 12 }}>
       <Space style={{ marginBottom: 12 }}>
-        <Button icon={<FolderAddOutlined />} onClick={onCreateFolder} size="small">
+        <Button icon={<FolderAddOutlined />} onClick={onCreateFolder} size="small" disabled={!canManage}>
           新建文件夹
         </Button>
         <Button icon={<ReloadOutlined />} onClick={onRefresh} size="small" loading={loading}>

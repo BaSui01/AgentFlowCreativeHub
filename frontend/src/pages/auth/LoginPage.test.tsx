@@ -2,16 +2,26 @@ import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 
 import { LoginPage } from './LoginPage';
 
 const loginMock = vi.fn();
+
+const hoistedAPI = vi.hoisted(() => ({
+	getHealth: vi.fn().mockResolvedValue({ status: 'healthy' }),
+	getReady: vi.fn().mockResolvedValue({ status: 'ready' }),
+}));
 
 vi.mock('@/features/auth/model/auth-context', () => {
 	return {
 		useAuth: () => authStub,
 	};
 });
+
+vi.mock('@/shared/api', () => ({
+	PublicAPI: hoistedAPI,
+}));
 
 type AuthStub = {
 	login: typeof loginMock;
@@ -29,6 +39,8 @@ let authStub: AuthStub = {
 describe('LoginPage', () => {
 	beforeEach(() => {
 		loginMock.mockResolvedValue(undefined);
+		hoistedAPI.getHealth.mockResolvedValue({ status: 'healthy' });
+		hoistedAPI.getReady.mockResolvedValue({ status: 'ready' });
 		authStub = {
 			login: loginMock,
 			isLoading: false,
@@ -39,11 +51,7 @@ describe('LoginPage', () => {
 	});
 
 	it('submits email and password', async () => {
-		render(
-			<MemoryRouter>
-				<LoginPage />
-			</MemoryRouter>,
-		);
+		renderWithProviders();
 
 		await userEvent.type(screen.getByPlaceholderText('name@example.com'), 'user@example.com');
 		await userEvent.type(screen.getByPlaceholderText('请输入密码'), 'secret123');
@@ -54,12 +62,20 @@ describe('LoginPage', () => {
 
 	it('renders error message from auth state', () => {
 		authStub.error = '认证失败';
-		render(
-			<MemoryRouter>
-				<LoginPage />
-			</MemoryRouter>,
-		);
+		renderWithProviders();
 
 		expect(screen.getByText('认证失败')).toBeInTheDocument();
 	});
 });
+
+const renderWithProviders = () => {
+	const client = new QueryClient();
+	return render(
+		<QueryClientProvider client={client}>
+			<MemoryRouter>
+				<LoginPage />
+			</MemoryRouter>
+		</QueryClientProvider>,
+	);
+};
+

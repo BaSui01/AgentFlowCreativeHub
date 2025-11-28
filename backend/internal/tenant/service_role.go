@@ -18,9 +18,12 @@ type RoleService interface {
 	UpdateRole(ctx context.Context, id string, params UpdateRoleParams) (*Role, error)
 	DeleteRole(ctx context.Context, id string) error
 	AssignRoleToUser(ctx context.Context, userID, roleID string) error
+	ReplaceUserRoles(ctx context.Context, userID string, roleIDs []string) error
 	UpdateRolePermissions(ctx context.Context, roleID string, permissionIDs []string) error
 	GetUserPermissions(ctx context.Context, userID string) ([]*Permission, error)
+	ListUserRoles(ctx context.Context, userID string) ([]string, error)
 	ListPermissions(ctx context.Context) ([]*Permission, error)
+	ListRoles(ctx context.Context) ([]*RoleWithPermissions, error)
 }
 
 type CreateRoleParams struct {
@@ -32,6 +35,11 @@ type CreateRoleParams struct {
 type UpdateRoleParams struct {
 	Name          string
 	Description   string
+	PermissionIDs []string
+}
+
+type RoleWithPermissions struct {
+	Role          *Role
 	PermissionIDs []string
 }
 
@@ -83,8 +91,11 @@ func (s *roleService) CreateRole(ctx context.Context, params CreateRoleParams) (
 		return nil, err
 	}
 	now := time.Now().UTC()
+	code := slugify(params.Name)
 	role := &Role{
 		ID:          id,
+		TenantID:    tc.TenantID,
+		Code:        code,
 		Name:        params.Name,
 		Description: params.Description,
 		CreatedAt:   now,
@@ -130,6 +141,9 @@ func (s *roleService) UpdateRole(ctx context.Context, id string, params UpdateRo
 			return nil, err
 		}
 		role.Name = params.Name
+		if !role.IsSystem {
+			role.Code = slugify(params.Name)
+		}
 	}
 	if params.Description != "" {
 		role.Description = params.Description
@@ -161,6 +175,13 @@ func (s *roleService) DeleteRole(ctx context.Context, id string) error {
 	tc, ok := FromContext(ctx)
 	if !ok {
 		return ErrForbidden
+	}
+	role, err := s.roles.GetByID(ctx, id)
+	if err != nil {
+		return err
+	}
+	if role.IsSystem {
+		return errors.New("tenant: system role cannot be deleted")
 	}
 
 	// 先解除用户与角色绑定
@@ -203,6 +224,23 @@ func (s *roleService) AssignRoleToUser(ctx context.Context, userID, roleID strin
 	return nil
 }
 
+func (s *roleService) ReplaceUserRoles(ctx context.Context, userID string, roleIDs []string) error {
+	tc, ok := FromContext(ctx)
+	if !ok {
+		return ErrForbidden
+	}
+	if err := s.userRoles.ReplaceUserRoles(ctx, userID, roleIDs); err != nil {
+		return err
+	}
+	if s.audit != nil {
+		s.audit.LogAction(ctx, tc, "user.roles.replace", "user_role", map[string]any{
+			"userId":  userID,
+			"roleIds": roleIDs,
+		})
+	}
+	return nil
+}
+
 func (s *roleService) UpdateRolePermissions(ctx context.Context, roleID string, permissionIDs []string) error {
 	tc, ok := FromContext(ctx)
 	if !ok {
@@ -230,9 +268,42 @@ func (s *roleService) GetUserPermissions(ctx context.Context, userID string) ([]
 	return s.perms.GetPermissionsForUser(ctx, userID)
 }
 
+func (s *roleService) ListUserRoles(ctx context.Context, userID string) ([]string, error) {
+	if _, ok := FromContext(ctx); !ok {
+		return nil, ErrForbidden
+	}
+	return s.userRoles.ListRoleIDsByUser(ctx, userID)
+}
+
 func (s *roleService) ListPermissions(ctx context.Context) ([]*Permission, error) {
 	if _, ok := FromContext(ctx); !ok {
 		return nil, ErrForbidden
 	}
 	return s.perms.ListByTenant(ctx)
+}
+
+func (s *roleService) ListRoles(ctx context.Context) ([]*RoleWithPermissions, error) {
+	if _, ok := FromContext(ctx); !ok {
+		return nil, ErrForbidden
+	}
+	roles, err := s.roles.List(ctx)
+	if err != nil {
+		return nil, err
+	}
+	ids := make([]string, 0, len(roles))
+	for _, role := range roles {
+		ids = append(ids, role.ID)
+	}
+	permMap, err := s.rolePerms.ListPermissionIDsByRoles(ctx, ids)
+	if err != nil {
+		return nil, err
+	}
+	result := make([]*RoleWithPermissions, 0, len(roles))
+	for _, role := range roles {
+		result = append(result, &RoleWithPermissions{
+			Role:          role,
+			PermissionIDs: append([]string(nil), permMap[role.ID]...),
+		})
+	}
+	return result, nil
 }

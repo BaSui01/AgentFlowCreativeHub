@@ -13,26 +13,32 @@ import (
 	"backend/internal/ai/google"
 	"backend/internal/ai/ollama"
 	"backend/internal/ai/openai"
-	"backend/internal/security"
+	"backend/internal/ai/wenxin"
+	"backend/internal/ai/xunfei"
+	"backend/internal/ai/zhipu"
+	"backend/internal/cache"
 	modelspkg "backend/internal/models"
+	"backend/internal/security"
 
 	"gorm.io/gorm"
 )
 
 // ClientFactory 模型客户端工厂
 type ClientFactory struct {
-	db      *gorm.DB
-	clients map[string]ModelClient // 客户端缓存
-	mu      sync.RWMutex
-	logger  ModelCallLogger
+	db        *gorm.DB
+	clients   map[string]ModelClient // 客户端缓存
+	diskCache *cache.DiskCache       // L3硬盘缓存
+	mu        sync.RWMutex
+	logger    ModelCallLogger
 }
 
 // NewClientFactory 创建客户端工厂
-func NewClientFactory(db *gorm.DB, logger ModelCallLogger) *ClientFactory {
+func NewClientFactory(db *gorm.DB, logger ModelCallLogger, diskCache *cache.DiskCache) *ClientFactory {
 	return &ClientFactory{
-		db:      db,
-		clients: make(map[string]ModelClient),
-		logger:  logger,
+		db:        db,
+		clients:   make(map[string]ModelClient),
+		diskCache: diskCache,
+		logger:    logger,
 	}
 }
 
@@ -88,7 +94,7 @@ func (f *ClientFactory) GetClient(ctx context.Context, tenantID, modelID string)
 			config.BaseURL = "https://api.openai.com/v1"
 		case "anthropic":
 			config.BaseURL = "https://api.anthropic.com"
-		case "google":
+		case "google", "gemini":
 			config.BaseURL = "https://generativelanguage.googleapis.com/v1beta"
 		case "azure":
 			config.BaseURL = getAPIKey("AZURE_OPENAI_ENDPOINT")
@@ -98,6 +104,12 @@ func (f *ClientFactory) GetClient(ctx context.Context, tenantID, modelID string)
 			config.BaseURL = "https://dashscope.aliyuncs.com/compatible-mode/v1"
 		case "ollama":
 			config.BaseURL = "http://localhost:11434"
+		case "wenxin", "baidu", "ernie":
+			config.BaseURL = "https://qianfan.baidubce.com/v2"
+		case "zhipu", "glm":
+			config.BaseURL = "https://open.bigmodel.cn/api/paas/v4"
+		case "xunfei", "spark":
+			config.BaseURL = "https://spark-api-open.xf-yun.com/v1"
 		}
 	}
 
@@ -120,7 +132,7 @@ func (f *ClientFactory) GetClient(ctx context.Context, tenantID, modelID string)
 
 	// 如果启用了日志记录，包装客户端
 	if f.logger != nil {
-		client = NewLoggingClient(client, f.logger, tenantID, modelID, &model)
+		client = NewLoggingClient(client, f.logger, tenantID, modelID, &model, f.diskCache)
 	}
 
 	// 缓存客户端
@@ -142,7 +154,7 @@ func (f *ClientFactory) createClient(config *ClientConfig, apiFormat string) (Mo
 		switch config.Provider {
 		case "anthropic":
 			format = "claude"
-		case "google":
+		case "google", "gemini":
 			format = "gemini"
 		case "ollama":
 			format = "ollama"
@@ -166,6 +178,15 @@ func (f *ClientFactory) createClient(config *ClientConfig, apiFormat string) (Mo
 	case "qwen":
 		// Qwen 兼容 OpenAI 协议
 		return openai.NewClient(config)
+	case "wenxin", "baidu", "ernie":
+		// 百度文心一言
+		return wenxin.NewClient(config)
+	case "zhipu", "glm":
+		// 智谱 AI GLM
+		return zhipu.NewClient(config)
+	case "xunfei", "spark":
+		// 讯飞星火
+		return xunfei.NewClient(config)
 	case "custom":
 		// Custom 驱动
 		return custom.NewClient(config)
@@ -238,14 +259,28 @@ func (f *ClientFactory) resolveCredentials(ctx context.Context, model *modelspkg
 		"openai":    "OPENAI_API_KEY",
 		"anthropic": "ANTHROPIC_API_KEY",
 		"google":    "GOOGLE_API_KEY",
+		"gemini":    "GEMINI_API_KEY",
 		"azure":     "AZURE_OPENAI_API_KEY",
 		"deepseek":  "DEEPSEEK_API_KEY",
 		"qwen":      "QWEN_API_KEY",
+		"wenxin":    "WENXIN_API_KEY",
+		"baidu":     "WENXIN_API_KEY",
+		"ernie":     "WENXIN_API_KEY",
+		"zhipu":     "ZHIPU_API_KEY",
+		"glm":       "ZHIPU_API_KEY",
+		"xunfei":    "XUNFEI_API_KEY",
+		"spark":     "XUNFEI_API_KEY",
 		"custom":    "CUSTOM_API_KEY",
 	}
 	if envVar, ok := envKeyMap[model.Provider]; ok {
 		if val := getAPIKey(envVar); strings.TrimSpace(val) != "" {
 			return strings.TrimSpace(val), "", nil
+		}
+		// Gemini 兼容 GOOGLE_API_KEY，以便复用既有配置
+		if model.Provider == "gemini" {
+			if val := strings.TrimSpace(getAPIKey("GOOGLE_API_KEY")); val != "" {
+				return val, "", nil
+			}
 		}
 	}
 

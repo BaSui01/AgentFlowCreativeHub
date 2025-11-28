@@ -1,3 +1,0 @@
-1. 查阅 Factory CLI 文档（已完成）以确认 `settings.json` 中 `commandAllowlist` 的作用：它仅限制 Droid 在 Shell 中可执行的命令，对 MCP 工具启用与否没有直接影响；若要让所有 MCP 工具可用，应保持 allowlist 为空或包含所有需要的 Shell/CLI 命令即可。
-2. 读取 `c:\Users\Administrator\.factory\settings.json`，检查是否存在 `commandAllowlist` 字段；若需要限制命令，则在该数组中列出允许的 Shell 命令（例如 `ls`、`pwd`、`dir`），但无需也无法在此处列出 `mcp__*` 工具名称。
-3. 如果目标是“始终允许所有 MCP 工具自动执行”，则重点是确保项目目录下 `.factory/skills/<skill-name>/skill.json` 配置正确，并且没有在 settings 中启用任何阻止 MCP 的 denylist；必要时记录需要新增或修正的 skill 配置文件路径，以供下一步实现。

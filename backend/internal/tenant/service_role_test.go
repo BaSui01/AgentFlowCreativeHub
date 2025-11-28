@@ -48,14 +48,39 @@ func (r *fakeRoleRepository) Delete(_ context.Context, id string) error {
 	return nil
 }
 
-type fakeUserRoleRepository struct{}
+func (r *fakeRoleRepository) List(_ context.Context) ([]*Role, error) {
+	var roles []*Role
+	for _, role := range r.items {
+		roles = append(roles, role)
+	}
+	return roles, nil
+}
 
-func (fakeUserRoleRepository) AssignRoleToUser(context.Context, string, string) error {
+type fakeUserRoleRepository struct {
+	roles map[string][]string
+}
+
+func newFakeUserRoleRepository() *fakeUserRoleRepository {
+	return &fakeUserRoleRepository{roles: make(map[string][]string)}
+}
+
+func (r *fakeUserRoleRepository) AssignRoleToUser(context.Context, string, string) error {
 	return nil
 }
 
-func (fakeUserRoleRepository) RemoveRolesByRole(context.Context, string) error {
+func (r *fakeUserRoleRepository) RemoveRolesByRole(context.Context, string) error {
 	return nil
+}
+
+func (r *fakeUserRoleRepository) ReplaceUserRoles(context.Context, string, []string) error {
+	return nil
+}
+
+func (r *fakeUserRoleRepository) ListRoleIDsByUser(_ context.Context, userID string) ([]string, error) {
+	if len(r.roles[userID]) == 0 {
+		return nil, nil
+	}
+	return append([]string(nil), r.roles[userID]...), nil
 }
 
 type fakeRolePermissionRepository struct {
@@ -69,6 +94,18 @@ func (r *fakeRolePermissionRepository) ReplaceRolePermissions(_ context.Context,
 	return nil
 }
 
+func (r *fakeRolePermissionRepository) ListPermissionIDsByRoles(_ context.Context, roleIDs []string) (map[string][]string, error) {
+	result := make(map[string][]string)
+	for _, id := range roleIDs {
+		if id == r.lastRoleID {
+			result[id] = append([]string(nil), r.lastPerms...)
+		} else {
+			result[id] = nil
+		}
+	}
+	return result, nil
+}
+
 type fakePermissionRepository struct{}
 
 func (fakePermissionRepository) ListByTenant(context.Context) ([]*Permission, error) {
@@ -79,22 +116,23 @@ func (fakePermissionRepository) GetPermissionsForUser(context.Context, string) (
 	return nil, nil
 }
 
-func newRoleServiceForTest(ids []string) (RoleService, *fakeRoleRepository, *fakeRolePermissionRepository) {
+func newRoleServiceForTest(ids []string) (RoleService, *fakeRoleRepository, *fakeRolePermissionRepository, *fakeUserRoleRepository) {
 	roleRepo := newFakeRoleRepository()
 	rolePermRepo := &fakeRolePermissionRepository{}
+	userRoleRepo := newFakeUserRoleRepository()
 	service := NewRoleService(
 		roleRepo,
-		fakeUserRoleRepository{},
+		userRoleRepo,
 		rolePermRepo,
 		fakePermissionRepository{},
 		&sequenceIDGenerator{values: ids},
 		&fakeAuditLogger{},
 	)
-	return service, roleRepo, rolePermRepo
+	return service, roleRepo, rolePermRepo, userRoleRepo
 }
 
 func TestRoleServiceCreateRoleRequiresContext(t *testing.T) {
-	service, _, _ := newRoleServiceForTest([]string{"role-1"})
+	service, _, _, _ := newRoleServiceForTest([]string{"role-1"})
 	_, err := service.CreateRole(context.Background(), CreateRoleParams{Name: "editor"})
 	if !errors.Is(err, ErrForbidden) {
 		t.Fatalf("缺少上下文时应返回 ErrForbidden, got %v", err)
@@ -102,7 +140,7 @@ func TestRoleServiceCreateRoleRequiresContext(t *testing.T) {
 }
 
 func TestRoleServiceCreateRoleRejectsDuplicateName(t *testing.T) {
-	service, repo, _ := newRoleServiceForTest([]string{"role-1"})
+	service, repo, _, _ := newRoleServiceForTest([]string{"role-1"})
 	repo.items["role-existing"] = &Role{ID: "role-existing", Name: "editor"}
 	ctx := WithTenantContext(context.Background(), TenantContext{TenantID: "tenant-1", UserID: "admin", IsSystemAdmin: true})
 	_, err := service.CreateRole(ctx, CreateRoleParams{Name: "editor"})
@@ -112,7 +150,7 @@ func TestRoleServiceCreateRoleRejectsDuplicateName(t *testing.T) {
 }
 
 func TestRoleServiceCreateRoleAssignsPermissions(t *testing.T) {
-	service, repo, rolePerm := newRoleServiceForTest([]string{"role-new"})
+	service, repo, rolePerm, _ := newRoleServiceForTest([]string{"role-new"})
 	ctx := WithTenantContext(context.Background(), TenantContext{TenantID: "tenant-1", UserID: "admin", IsSystemAdmin: true})
 	role, err := service.CreateRole(ctx, CreateRoleParams{Name: "reviewer", Description: "审核", PermissionIDs: []string{"perm-1", "perm-2"}})
 	if err != nil {
@@ -130,7 +168,7 @@ func TestRoleServiceCreateRoleAssignsPermissions(t *testing.T) {
 }
 
 func TestRoleServiceUpdateRoleChangesNameAndPermissions(t *testing.T) {
-	service, repo, rolePerm := newRoleServiceForTest([]string{"role-1"})
+	service, repo, rolePerm, _ := newRoleServiceForTest([]string{"role-1"})
 	repo.items["role-1"] = &Role{ID: "role-1", Name: "old", Description: ""}
 	ctx := WithTenantContext(context.Background(), TenantContext{TenantID: "tenant-1", UserID: "admin", IsSystemAdmin: true})
 	updated, err := service.UpdateRole(ctx, "role-1", UpdateRoleParams{Name: "new", Description: "desc", PermissionIDs: []string{"perm-9"}})
@@ -142,5 +180,18 @@ func TestRoleServiceUpdateRoleChangesNameAndPermissions(t *testing.T) {
 	}
 	if rolePerm.lastRoleID != "role-1" || len(rolePerm.lastPerms) != 1 || rolePerm.lastPerms[0] != "perm-9" {
 		t.Fatalf("权限更新未执行: %+v", rolePerm.lastPerms)
+	}
+}
+
+func TestRoleServiceListUserRoles(t *testing.T) {
+	service, _, _, userRepo := newRoleServiceForTest([]string{"role-1"})
+	userRepo.roles["user-1"] = []string{"role-a", "role-b"}
+	ctx := WithTenantContext(context.Background(), TenantContext{TenantID: "tenant-1", UserID: "admin"})
+	roles, err := service.ListUserRoles(ctx, "user-1")
+	if err != nil {
+		t.Fatalf("ListUserRoles 返回错误: %v", err)
+	}
+	if len(roles) != 2 || roles[0] != "role-a" {
+		t.Fatalf("返回角色不正确: %#v", roles)
 	}
 }

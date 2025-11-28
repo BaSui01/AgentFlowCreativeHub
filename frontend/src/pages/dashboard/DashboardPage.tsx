@@ -1,27 +1,29 @@
 import React, { useState } from 'react';
-import { Card, Col, Row, Statistic, Tag, Typography, Modal, Input, message } from 'antd';
+import { Alert, Card, Col, Row, Statistic, Tag, Typography, Modal, Input, message } from 'antd';
 import { useQuery } from '@tanstack/react-query';
 
-import { SystemService } from '@/shared/api';
 import { useAuth } from '@/features/auth/model/auth-context';
+import { PERMISSIONS, useAuthorization } from '@/features/auth/model/use-authorization';
 import { FileExplorer, FilePreview, StagingPanel, CommandConsole } from '@/features/workspace/components';
 import { WorkspaceAPI } from '@/features/workspace/api';
 import { useWorkspaceTree, useWorkspaceFile, useWorkspaceStaging, useWorkspaceMutations } from '@/features/workspace/hooks';
 import type { AttachContextPayload } from '@/features/workspace/types';
+import { PublicAPI } from '@/shared/api';
 
 const { Title, Paragraph, Text } = Typography;
 
 export const DashboardPage: React.FC = () => {
   const { user } = useAuth();
+  const { hasPermission } = useAuthorization();
   const { data: health, isLoading: loadingHealth } = useQuery({
     queryKey: ['system-health'],
-    queryFn: () => SystemService.getHealth(),
+    queryFn: () => PublicAPI.getHealth(),
     staleTime: 30_000,
   });
 
   const { data: readiness, isLoading: loadingReady } = useQuery({
     queryKey: ['system-ready'],
-    queryFn: () => SystemService.getReady(),
+    queryFn: () => PublicAPI.getReady(),
     staleTime: 30_000,
   });
 
@@ -29,11 +31,15 @@ export const DashboardPage: React.FC = () => {
   const [sessionId, setSessionId] = useState<string>();
   const [approvingId, setApprovingId] = useState<string>();
   const [rejectingId, setRejectingId] = useState<string>();
+  const [requestingId, setRequestingId] = useState<string>();
 
   const treeQuery = useWorkspaceTree();
   const fileQuery = useWorkspaceFile(selectedNodeId);
   const stagingQuery = useWorkspaceStaging();
   const mutations = useWorkspaceMutations();
+  const canWrite = hasPermission(PERMISSIONS.WORKSPACE_WRITE);
+  const canReview = hasPermission(PERMISSIONS.WORKSPACE_REVIEW);
+  const canExecuteCommands = hasPermission(PERMISSIONS.COMMAND_EXECUTE);
 
   const handleCreateFolder = () => {
     let value = '';
@@ -53,29 +59,34 @@ export const DashboardPage: React.FC = () => {
     });
   };
 
-  const handleSaveFile = (payload: { nodeId: string; content: string }) => {
+  const handleSaveFile = (payload: { nodeId: string; content: string; versionId?: string }) => {
     mutations.saveFile.mutate(payload, {
       onSuccess: () => message.success('已保存'),
     });
   };
 
-  const handleApprove = (id: string) => {
-    setApprovingId(id);
-    mutations.approveStaging.mutate(id, {
+  const handleApprove = (args: { id: string; reviewToken: string }) => {
+    setApprovingId(args.id);
+    mutations.approveStaging.mutate(args, {
       onSuccess: () => message.success('审核通过'),
       onSettled: () => setApprovingId(undefined),
     });
   };
 
-  const handleReject = (id: string, reason: string) => {
-    setRejectingId(id);
-    mutations.rejectStaging.mutate(
-      { id, reason },
-      {
-        onSuccess: () => message.success('已驳回'),
-        onSettled: () => setRejectingId(undefined),
-      },
-    );
+  const handleReject = (args: { id: string; reason: string; reviewToken: string }) => {
+    setRejectingId(args.id);
+    mutations.rejectStaging.mutate(args, {
+      onSuccess: () => message.success('已驳回'),
+      onSettled: () => setRejectingId(undefined),
+    });
+  };
+
+  const handleRequestChanges = (args: { id: string; reason: string; reviewToken: string }) => {
+    setRequestingId(args.id);
+    mutations.requestChanges.mutate(args, {
+      onSuccess: () => message.success('已发出修改请求'),
+      onSettled: () => setRequestingId(undefined),
+    });
   };
 
   const handleAttachContext = async (payload: AttachContextPayload) => {
@@ -86,6 +97,10 @@ export const DashboardPage: React.FC = () => {
     }
     return sessionId ?? '';
   };
+
+  const actionableStaging = (stagingQuery.data || []).filter((item) =>
+    item.status === 'awaiting_review' || item.status === 'awaiting_secondary_review',
+  );
 
   return (
     <div>
@@ -123,19 +138,32 @@ export const DashboardPage: React.FC = () => {
               onSelect={setSelectedNodeId}
               onCreateFolder={handleCreateFolder}
               onRefresh={() => treeQuery.refetch()}
+              canManage={canWrite}
             />
           </Col>
           <Col xs={24} lg={10} style={{ borderRight: '1px solid #f5f5f5', padding: '0 16px' }}>
-            <FilePreview data={fileQuery.data} saving={mutations.saveFile.isPending} onSave={handleSaveFile} />
+            <FilePreview
+              data={fileQuery.data}
+              saving={mutations.saveFile.isPending}
+              onSave={handleSaveFile}
+              canEdit={canWrite}
+            />
           </Col>
           <Col xs={24} lg={8}>
-            <StagingPanel
-              items={stagingQuery.data}
-              onApprove={handleApprove}
-              onReject={handleReject}
-              approvingId={approvingId}
-              rejectingId={rejectingId}
-            />
+            {canReview ? (
+              <StagingPanel
+                items={actionableStaging}
+                onApprove={handleApprove}
+                onReject={handleReject}
+                onRequestChanges={handleRequestChanges}
+                approvingId={approvingId}
+                rejectingId={rejectingId}
+                requestingId={requestingId}
+                canReview={canReview}
+              />
+            ) : (
+              <Alert type="info" message="您没有审核权限，工作台将仅展示文件内容" showIcon />
+            )}
           </Col>
         </Row>
         <CommandConsole
@@ -143,6 +171,7 @@ export const DashboardPage: React.FC = () => {
           onAttach={handleAttachContext}
           sessionId={sessionId}
           onSessionChange={setSessionId}
+          canExecute={canExecuteCommands}
         />
       </Card>
     </div>

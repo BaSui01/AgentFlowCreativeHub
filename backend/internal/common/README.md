@@ -277,7 +277,7 @@ func (s *UserService) DeleteUser(userID string, operatorID string) error {
 
 ## 🔧 数据库触发器支持
 
-配合 `db/migrations/0004_add_triggers.sql` 使用，自动实现：
+配合 `backend/db/migrations/0004_add_triggers.sql` 使用，自动实现：
 
 1. **自动更新 updated_at**：任何表更新时自动设置
 2. **统计字段维护**：知识库文档数、分片数自动更新
@@ -324,10 +324,10 @@ func (s *UserService) DeleteUser(userID string, operatorID string) error {
 1. **运行迁移脚本**：
    ```bash
    # 应用软删除字段
-   psql -d your_db -f db/migrations/0003_add_soft_delete.sql
+   psql -d your_db -f backend/db/migrations/0003_add_soft_delete.sql
    
    # 添加触发器
-   psql -d your_db -f db/migrations/0004_add_triggers.sql
+   psql -d your_db -f backend/db/migrations/0004_add_triggers.sql
    ```
 
 2. **更新 Go 模型**：
@@ -366,4 +366,4 @@ func (s *UserService) DeleteUser(userID string, operatorID string) error {
 
 - [数据库设计文档](../../../docs/数据库设计文档.md)
 - [数据模型完善性分析](../../../.factory/docs/2025-11-17-spec.md)
-- [迁移脚本](../../../db/migrations/)
+- [迁移脚本](../../db/migrations/)

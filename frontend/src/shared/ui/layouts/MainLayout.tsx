@@ -1,27 +1,56 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import { Layout, Menu, Avatar, Dropdown, Button, Typography, Space } from 'antd';
-import { HomeOutlined, LogoutOutlined, ThunderboltOutlined } from '@ant-design/icons';
+import { DashboardOutlined, HomeOutlined, LogoutOutlined, TeamOutlined, ThunderboltOutlined } from '@ant-design/icons';
 import { Outlet, useLocation, useNavigate } from 'react-router-dom';
 
 import { useAuth } from '@/features/auth/model/auth-context';
+import { PERMISSIONS, useAuthorization } from '@/features/auth/model/use-authorization';
 
 const { Header, Content, Footer, Sider } = Layout;
 
 export const MainLayout: React.FC = () => {
   const { user, logout } = useAuth();
+  const { hasPermission } = useAuthorization();
   const location = useLocation();
   const navigate = useNavigate();
 
-  const selectedKey = location.pathname.startsWith('/dashboard') ? '/dashboard' : location.pathname;
+  const selectedKey = useMemo(() => {
+    if (location.pathname.startsWith('/admin/roles')) {
+      return '/admin/roles';
+    }
+    if (location.pathname.startsWith('/admin/operations')) {
+      return '/admin/operations';
+    }
+    return '/dashboard';
+  }, [location.pathname]);
 
-  const menuItems = [
-    {
-      key: '/dashboard',
-      icon: <HomeOutlined />,
-      label: '仪表盘',
-      onClick: () => navigate('/dashboard'),
-    },
-  ];
+  const menuItems = useMemo(() => {
+    const items = [
+      {
+        key: '/dashboard',
+        icon: <HomeOutlined />,
+        label: '仪表盘',
+        onClick: () => navigate('/dashboard'),
+      },
+    ];
+    if (hasPermission(PERMISSIONS.WORKSPACE_REVIEW) || hasPermission(PERMISSIONS.COMMAND_ADMIN)) {
+      items.push({
+        key: '/admin/operations',
+        icon: <DashboardOutlined />,
+        label: '运营控制台',
+        onClick: () => navigate('/admin/operations'),
+      });
+    }
+    if (hasPermission(PERMISSIONS.MANAGE_ROLES)) {
+      items.push({
+        key: '/admin/roles',
+        icon: <TeamOutlined />,
+        label: '角色与权限',
+        onClick: () => navigate('/admin/roles'),
+      });
+    }
+    return items;
+  }, [hasPermission, navigate]);
 
   const userMenu = {
     items: [

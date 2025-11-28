@@ -1,8 +1,10 @@
 import React from 'react';
-import { Alert, Card, Form, Input, Button, Typography } from 'antd';
+import { Alert, Card, Form, Input, Button, Typography, Space, Tag } from 'antd';
 import { Navigate, useLocation, useNavigate } from 'react-router-dom';
+import { useQuery } from '@tanstack/react-query';
 
 import { useAuth } from '@/features/auth/model/auth-context';
+import { PublicAPI } from '@/shared/api';
 
 const { Title, Paragraph } = Typography;
 
@@ -16,6 +18,8 @@ export const LoginPage: React.FC = () => {
   const { login, isLoading, error, isAuthenticated } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
+  const { data: healthStatus } = useQuery({ queryKey: ['login-health'], queryFn: () => PublicAPI.getHealth(), staleTime: 30_000 });
+  const { data: readinessStatus } = useQuery({ queryKey: ['login-ready'], queryFn: () => PublicAPI.getReady(), staleTime: 30_000 });
 
   const resolveRedirectPath = () => {
     return (location.state as LocationState | null)?.from?.pathname ?? '/dashboard';
@@ -67,6 +71,13 @@ export const LoginPage: React.FC = () => {
           登录
         </Button>
       </Form>
+      <Space direction="vertical" style={{ marginTop: 24, width: '100%' }}>
+        <Typography.Text type="secondary">系统状态</Typography.Text>
+        <Space>
+          <Tag color={healthStatus?.status === 'healthy' ? 'green' : 'red'}>健康：{healthStatus?.status ?? '检测中'}</Tag>
+          <Tag color={readinessStatus?.status === 'ready' ? 'blue' : 'orange'}>依赖：{readinessStatus?.status ?? '检测中'}</Tag>
+        </Space>
+      </Space>
     </Card>
   );
 };

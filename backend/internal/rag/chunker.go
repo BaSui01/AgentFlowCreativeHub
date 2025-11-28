@@ -35,12 +35,13 @@ func NewChunker(chunkSize, chunkOverlap int) *Chunker {
 
 // ChunkResult 分块结果
 type ChunkResult struct {
-	Content     string // 分块内容
-	ChunkIndex  int    // 分块索引(从0开始)
-	StartOffset int    // 起始偏移量(字符)
-	EndOffset   int    // 结束偏移量(字符)
-	TokenCount  int    // Token数量(近似)
-	ContentHash string // 内容哈希(SHA256)
+	Content     string                 // 分块内容
+	ChunkIndex  int                    // 分块索引(从0开始)
+	StartOffset int                    // 起始偏移量(字符)
+	EndOffset   int                    // 结束偏移量(字符)
+	TokenCount  int                    // Token数量(近似)
+	ContentHash string                 // 内容哈希(SHA256)
+	Metadata    map[string]interface{} // 元数据 (章节标题等)
 }
 
 // ChunkDocument 对文档进行分块

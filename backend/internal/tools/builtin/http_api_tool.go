@@ -11,19 +11,20 @@ import (
 	"time"
 
 	"backend/internal/tools"
+	"backend/pkg/httputil"
 )
 
 // HTTPAPITool HTTP API 工具 - 通用的 REST API 调用工具
 type HTTPAPITool struct {
-	client *http.Client
+	client *httputil.Client
 }
 
 // NewHTTPAPITool 创建 HTTP API 工具
 func NewHTTPAPITool() *HTTPAPITool {
 	return &HTTPAPITool{
-		client: &http.Client{
-			Timeout: 30 * time.Second,
-		},
+		client: httputil.NewClient(
+			httputil.WithTimeout(30 * time.Second),
+		),
 	}
 }
 
@@ -100,7 +101,7 @@ func (t *HTTPAPITool) Execute(ctx context.Context, input map[string]any) (map[st
 	}
 	
 	// 发送请求
-	resp, err := t.client.Do(req)
+	resp, err := t.client.Do(ctx, req)
 	if err != nil {
 		return nil, fmt.Errorf("HTTP 请求失败: %w", err)
 	}

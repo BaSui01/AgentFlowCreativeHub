@@ -20,6 +20,36 @@ func NewMiddlewareFactory(checker PermissionChecker) *MiddlewareFactory {
 	}
 }
 
+// RequireAdmin returns a Gin middleware that checks if the user has admin role.
+func (f *MiddlewareFactory) RequireAdmin() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		userCtx, exists := GetUserContext(c)
+		if !exists {
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "未认证"})
+			c.Abort()
+			return
+		}
+
+		// 检查是否是管理员
+		isAdmin := false
+		for _, role := range userCtx.Roles {
+			switch role {
+			case "admin", "super_admin", "system_admin", "tenant_admin":
+				isAdmin = true
+				break
+			}
+		}
+
+		if !isAdmin {
+			c.JSON(http.StatusForbidden, gin.H{"error": "需要管理员权限"})
+			c.Abort()
+			return
+		}
+
+		c.Next()
+	}
+}
+
 // RequirePermission returns a Gin middleware that checks if the user has the required permission on the resource.
 func (f *MiddlewareFactory) RequirePermission(resource, action string) gin.HandlerFunc {
 	return func(c *gin.Context) {

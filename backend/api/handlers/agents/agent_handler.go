@@ -101,16 +101,39 @@ func (h *AgentHandler) CreateAgentConfig(c *gin.Context) {
 	}
 
 	req := agent.CreateAgentConfigRequest{
-		TenantID:         tenantID,
-		AgentType:        body.AgentType,
-		Name:             body.Name,
-		Description:      body.Description,
-		ModelID:          body.ModelID,
+		TenantID:    tenantID,
+		AgentType:   body.AgentType,
+		Name:        body.Name,
+		Description: body.Description,
+		// 模型配置
+		ModelID:           body.ModelID,
+		SecondaryModelID:  body.SecondaryModelID,
+		FallbackStrategy:  body.FallbackStrategy,
+		FallbackTimeoutMs: body.FallbackTimeoutMs,
+		// 任务专用模型
+		ToolModelID:     body.ToolModelID,
+		CreativeModelID: body.CreativeModelID,
+		AnalysisModelID: body.AnalysisModelID,
+		SummaryModelID:  body.SummaryModelID,
+		ModelRouting:    body.ModelRouting,
+		// Prompt
 		PromptTemplateID: body.PromptTemplateID,
 		SystemPrompt:     body.SystemPrompt,
-		Temperature:      body.Temperature,
-		MaxTokens:        body.MaxTokens,
-		ExtraConfig:      body.ExtraConfig,
+		// 参数
+		Temperature: body.Temperature,
+		MaxTokens:   body.MaxTokens,
+		// 工具
+		Tools:       body.Tools,
+		AutoToolUse: body.AutoToolUse,
+		// RAG
+		KnowledgeBaseIDs: body.KnowledgeBaseIDs,
+		RAGEnabled:       body.RAGEnabled,
+		RAGTopK:          body.RAGTopK,
+		RAGMinScore:      body.RAGMinScore,
+		// 状态
+		Status: body.Status,
+		// 扩展
+		ExtraConfig: body.ExtraConfig,
 	}
 
 	agentConfig, err := h.service.CreateAgentConfig(c.Request.Context(), &req)
@@ -144,14 +167,37 @@ func (h *AgentHandler) UpdateAgentConfig(c *gin.Context) {
 	}
 
 	req := agent.UpdateAgentConfigRequest{
-		Name:             body.Name,
-		Description:      body.Description,
-		ModelID:          body.ModelID,
+		Name:        body.Name,
+		Description: body.Description,
+		// 模型配置
+		ModelID:           body.ModelID,
+		SecondaryModelID:  body.SecondaryModelID,
+		FallbackStrategy:  body.FallbackStrategy,
+		FallbackTimeoutMs: body.FallbackTimeoutMs,
+		// 任务专用模型
+		ToolModelID:     body.ToolModelID,
+		CreativeModelID: body.CreativeModelID,
+		AnalysisModelID: body.AnalysisModelID,
+		SummaryModelID:  body.SummaryModelID,
+		ModelRouting:    body.ModelRouting,
+		// Prompt
 		PromptTemplateID: body.PromptTemplateID,
 		SystemPrompt:     body.SystemPrompt,
-		Temperature:      body.Temperature,
-		MaxTokens:        body.MaxTokens,
-		ExtraConfig:      body.ExtraConfig,
+		// 参数
+		Temperature: body.Temperature,
+		MaxTokens:   body.MaxTokens,
+		// 工具
+		Tools:       body.Tools,
+		AutoToolUse: body.AutoToolUse,
+		// RAG
+		KnowledgeBaseIDs: body.KnowledgeBaseIDs,
+		RAGEnabled:       body.RAGEnabled,
+		RAGTopK:          body.RAGTopK,
+		RAGMinScore:      body.RAGMinScore,
+		// 状态
+		Status: body.Status,
+		// 扩展
+		ExtraConfig: body.ExtraConfig,
 	}
 
 	agentConfig, err := h.service.UpdateAgentConfig(c.Request.Context(), tenantID, agentID, &req)

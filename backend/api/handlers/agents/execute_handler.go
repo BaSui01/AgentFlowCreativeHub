@@ -3,6 +3,7 @@ package agents
 import (
 	"io"
 	"net/http"
+	"strconv"
 
 	response "backend/api/handlers/common"
 	"backend/internal/agent/runtime"
@@ -221,6 +222,106 @@ func (h *AgentExecuteHandler) ExecuteStream(c *gin.Context) {
 			}
 			return false
 		}
+	})
+}
+
+// ListExecutions 获取Agent执行历史
+// @Summary 获取Agent执行历史
+// @Description 查询指定Agent的所有执行记录（支持分页）
+// @Tags Agents
+// @Security BearerAuth
+// @Produce json
+// @Param id path string true "Agent ID"
+// @Param page query int false "页码" default(1)
+// @Param pageSize query int false "每页数量" default(20)
+// @Param status query string false "状态筛选: pending, running, completed, failed"
+// @Success 200 {object} map[string]interface{} "执行历史列表"
+// @Failure 400 {object} response.ErrorResponse
+// @Failure 500 {object} response.ErrorResponse
+// @Router /api/agents/{id}/executions [get]
+func (h *AgentExecuteHandler) ListExecutions(c *gin.Context) {
+	tenantID := c.GetString("tenant_id")
+	agentID := c.Param("id")
+	
+	// 解析分页参数
+	page := 1
+	pageSize := 20
+	if p := c.Query("page"); p != "" {
+		if val, err := strconv.Atoi(p); err == nil && val > 0 {
+			page = val
+		}
+	}
+	if ps := c.Query("pageSize"); ps != "" {
+		if val, err := strconv.Atoi(ps); err == nil && val > 0 && val <= 100 {
+			pageSize = val
+		}
+	}
+	
+	status := c.Query("status")
+	
+	// 权限验证：确保Agent属于当前租户
+	agent, err := h.registry.GetAgent(c.Request.Context(), tenantID, agentID)
+	if err != nil {
+		c.JSON(http.StatusNotFound, response.ErrorResponse{
+			Success: false,
+			Message: "Agent不存在或无权访问",
+		})
+		return
+	}
+	
+	// 从workflow_executions表查询该Agent的执行记录
+	// 这里需要通过工作流定义中的节点类型来匹配Agent
+	db := h.registry.DB() // 假设Registry有DB访问方法，如果没有需要传入
+	if db == nil {
+		c.JSON(http.StatusInternalServerError, response.ErrorResponse{
+			Success: false,
+			Message: "数据库连接不可用",
+		})
+		return
+	}
+	
+	// 查询执行记录
+	var executions []map[string]interface{}
+	var total int64
+	
+	query := db.WithContext(c.Request.Context()).
+		Table("workflow_executions").
+		Where("tenant_id = ?", tenantID).
+		Where("workflow_id IN (SELECT id FROM workflows WHERE tenant_id = ? AND definition::text LIKE ?)", 
+			tenantID, "%"+agent.Type()+"%")
+	
+	if status != "" {
+		query = query.Where("status = ?", status)
+	}
+	
+	// 统计总数
+	query.Count(&total)
+	
+	// 分页查询
+	offset := (page - 1) * pageSize
+	if err := query.
+		Order("created_at DESC").
+		Limit(pageSize).
+		Offset(offset).
+		Select("id, workflow_id, status, input, output, error_message, started_at, completed_at, created_at").
+		Scan(&executions).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, response.ErrorResponse{
+			Success: false,
+			Message: "查询执行历史失败: " + err.Error(),
+		})
+		return
+	}
+	
+	c.JSON(http.StatusOK, gin.H{
+		"executions": executions,
+		"total":      total,
+		"page":       page,
+		"pageSize":   pageSize,
+		"agent": gin.H{
+			"id":   agentID,
+			"name": agent.Name(),
+			"type": agent.Type(),
+		},
 	})
 }
 
