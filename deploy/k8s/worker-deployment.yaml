@@ -1,0 +1,102 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: agentflow-worker
+  namespace: agentflow
+  labels:
+    app: agentflow
+    component: worker
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: agentflow
+      component: worker
+  template:
+    metadata:
+      labels:
+        app: agentflow
+        component: worker
+    spec:
+      serviceAccountName: agentflow-backend
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+      containers:
+        - name: worker
+          image: agentflow/backend:latest
+          imagePullPolicy: Always
+          command: ["/app/backend", "worker"]
+          env:
+            - name: APP_ENV
+              value: "production"
+            - name: DB_HOST
+              valueFrom:
+                secretKeyRef:
+                  name: agentflow-secrets
+                  key: db-host
+            - name: DB_PORT
+              value: "5432"
+            - name: DB_USER
+              valueFrom:
+                secretKeyRef:
+                  name: agentflow-secrets
+                  key: db-user
+            - name: DB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: agentflow-secrets
+                  key: db-password
+            - name: DB_NAME
+              value: "agentflow"
+            - name: REDIS_ADDR
+              valueFrom:
+                secretKeyRef:
+                  name: agentflow-secrets
+                  key: redis-addr
+            - name: REDIS_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: agentflow-secrets
+                  key: redis-password
+            - name: OPENAI_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: agentflow-secrets
+                  key: openai-api-key
+                  optional: true
+          resources:
+            requests:
+              cpu: "500m"
+              memory: "512Mi"
+            limits:
+              cpu: "2000m"
+              memory: "2Gi"
+          volumeMounts:
+            - name: config
+              mountPath: /app/config
+              readOnly: true
+      volumes:
+        - name: config
+          configMap:
+            name: agentflow-config
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: agentflow-worker-hpa
+  namespace: agentflow
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: agentflow-worker
+  minReplicas: 2
+  maxReplicas: 8
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 70
